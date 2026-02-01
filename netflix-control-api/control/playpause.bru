@@ -1,0 +1,16 @@
+meta {
+  name: playpause
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{host}}/control/playpause
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

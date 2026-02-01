@@ -23,6 +23,16 @@ NAV_CONTROLLER_SCRIPT = """
         currentCol: 0,
         observer: null,
         discoverTimeout: null,
+        
+        // Modal navigation state
+        inModalMode: false,
+        zones: [],           // Array of zone objects: { type: string, elements: Element[] }
+        currentZone: 0,
+        
+        // Season dropdown state
+        dropdownOpen: false,
+        dropdownOptions: [],
+        dropdownIndex: 0,
 
         // Netflix red color for the focus overlay
         FOCUS_COLOR: '#E50914',
@@ -41,10 +51,16 @@ NAV_CONTROLLER_SCRIPT = """
             modalItems: '.previewModal--container [data-uia*="button"], .previewModal--container [role="button"]',
             // Player controls
             playerControls: '[data-uia^="control-"]',
-            // Episode list items (for series)
-            episodes: '.titleCard--container, .episodeLockup, [data-uia*="episode"]',
-            // Season/dropdown selector
-            seasonSelector: '[data-uia="dropdown-toggle"], .episodeSelector select, .seasonSelector',
+            // Episode list items (for series) - specific to episode selector container
+            episodes: '.episodeSelector-container [data-uia="titleCard--container"], .titleCardList--container.episode-item',
+            // Season/dropdown selector trigger
+            seasonSelector: '.episodeSelector-header [role="button"], .episodeSelector-header button, [data-uia="dropdown-toggle"]',
+            // Season dropdown options (when dropdown is open)
+            seasonOptions: '[role="listbox"] [role="option"], .episodeSelector-dropdown [role="option"], .dropdown-menu li',
+            // Modal header buttons (play, my list, rate, audio, close)
+            modalHeaderButtons: '[data-uia="play-button"], [data-uia="add-to-my-list"], [data-uia="thumbs-rate-button"], [data-uia="audio-toggle-unmuted"], [data-uia="audio-toggle-muted"], [data-uia="previewModal-closebtn"]',
+            // More Like This section cards
+            moreLikeThis: '.moreToExplore [data-uia="titleCard--container"], [data-uia="trailersAndMore--container"] [data-uia="titleCard--container"], .moreLikeThis [data-uia="titleCard--container"]',
         },
 
         init() {
@@ -113,10 +129,156 @@ NAV_CONTROLLER_SCRIPT = """
             });
         },
 
+        // Zone-based discovery for modal dialogs
+        discoverModal(modal) {
+            this.zones = [];
+            this.inModalMode = true;
+            
+            // Check if season dropdown is open
+            const dropdownMenu = modal.querySelector('[role="listbox"], .episodeSelector-dropdown, .dropdown-menu');
+            if (dropdownMenu && dropdownMenu.offsetParent !== null) {
+                // Dropdown is open - navigate dropdown options
+                this.dropdownOpen = true;
+                const options = dropdownMenu.querySelectorAll('[role="option"], li[tabindex], li > a');
+                this.dropdownOptions = [...options].filter(el => {
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                });
+                
+                if (this.dropdownOptions.length > 0) {
+                    // Create a single zone for dropdown
+                    this.zones.push({
+                        type: 'dropdown',
+                        elements: this.dropdownOptions.map(el => ({
+                            element: el,
+                            rect: el.getBoundingClientRect()
+                        })),
+                        layout: 'vertical'
+                    });
+                    console.log('[NetflixNav] Dropdown open with', this.dropdownOptions.length, 'options');
+                    return;
+                }
+            } else {
+                this.dropdownOpen = false;
+                this.dropdownOptions = [];
+                this.dropdownIndex = 0;
+            }
+            
+            // Zone 0: Header controls (horizontal row)
+            const headerButtons = modal.querySelectorAll(this.SELECTORS.modalHeaderButtons);
+            const visibleHeaderButtons = [...headerButtons].filter(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 10 && rect.height > 10 && rect.top < window.innerHeight;
+            });
+            if (visibleHeaderButtons.length > 0) {
+                // Sort by x position for horizontal navigation
+                visibleHeaderButtons.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+                this.zones.push({
+                    type: 'header',
+                    elements: visibleHeaderButtons.map(el => ({
+                        element: el,
+                        rect: el.getBoundingClientRect()
+                    })),
+                    layout: 'horizontal'
+                });
+            }
+            
+            // Zone 1: Season selector (if multi-season)
+            const seasonToggle = modal.querySelector(this.SELECTORS.seasonSelector);
+            if (seasonToggle) {
+                const rect = seasonToggle.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    this.zones.push({
+                        type: 'season',
+                        elements: [{ element: seasonToggle, rect: rect }],
+                        layout: 'single'
+                    });
+                }
+            }
+            
+            // Zone 2: Episode list (vertical list)
+            const episodes = modal.querySelectorAll(this.SELECTORS.episodes);
+            const visibleEpisodes = [...episodes].filter(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 10 && rect.height > 10;
+            });
+            if (visibleEpisodes.length > 0) {
+                // Sort by y position for vertical navigation
+                visibleEpisodes.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+                this.zones.push({
+                    type: 'episodes',
+                    elements: visibleEpisodes.map(el => ({
+                        element: el,
+                        rect: el.getBoundingClientRect()
+                    })),
+                    layout: 'vertical'
+                });
+            }
+            
+            // Zone 3: More Like This (horizontal carousel)
+            const similarCards = modal.querySelectorAll(this.SELECTORS.moreLikeThis);
+            const visibleSimilar = [...similarCards].filter(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 10 && rect.height > 10;
+            });
+            if (visibleSimilar.length > 0) {
+                // Sort by x position for horizontal navigation
+                visibleSimilar.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+                this.zones.push({
+                    type: 'similar',
+                    elements: visibleSimilar.map(el => ({
+                        element: el,
+                        rect: el.getBoundingClientRect()
+                    })),
+                    layout: 'horizontal'
+                });
+            }
+            
+            // Reset zone position if needed
+            if (this.currentZone >= this.zones.length) {
+                this.currentZone = 0;
+            }
+            if (this.zones.length > 0) {
+                const zone = this.zones[this.currentZone];
+                if (this.currentCol >= zone.elements.length) {
+                    this.currentCol = 0;
+                }
+            }
+            
+            console.log('[NetflixNav] Modal discovered', this.zones.length, 'zones:', 
+                this.zones.map(z => z.type + '(' + z.elements.length + ')').join(', '));
+        },
+
         discover() {
             this.elements = [];
             this.rows = [];
 
+            // Check for modal overlay (title detail view) - use zone-based navigation
+            const modal = document.querySelector('.previewModal--container');
+            if (modal) {
+                this.discoverModal(modal);
+                
+                // Build rows from zones for compatibility with updateFocus
+                this.rows = this.zones.map(zone => zone.elements);
+                this.elements = this.rows.flat();
+                
+                // Map zone/col to row/col for focus update
+                this.currentRow = this.currentZone;
+                
+                this.updateFocus();
+                
+                return {
+                    success: true,
+                    elementCount: this.elements.length,
+                    zoneCount: this.zones.length,
+                    inModalMode: true
+                };
+            }
+            
+            // Not in modal mode - use standard row-based discovery
+            this.inModalMode = false;
+            this.zones = [];
+            
             // Detect page context
             const url = window.location.href;
             let selectors = [];
@@ -136,23 +298,6 @@ NAV_CONTROLLER_SCRIPT = """
             } else {
                 // Generic - try common selectors
                 selectors = [this.SELECTORS.tiles, this.SELECTORS.profiles, this.SELECTORS.buttons];
-            }
-
-            // Check for modal overlay (title detail view)
-            const modal = document.querySelector('.previewModal--container');
-            if (modal) {
-                // Check if it's a series (has episodes section)
-                const hasEpisodes = modal.querySelector('.Episodes, .episodeSelector, [data-uia*="episode"]');
-                if (hasEpisodes) {
-                    selectors = [
-                        this.SELECTORS.episodes,
-                        this.SELECTORS.seasonSelector,
-                        this.SELECTORS.buttons,
-                        this.SELECTORS.modalItems
-                    ];
-                } else {
-                    selectors = [this.SELECTORS.modalItems, this.SELECTORS.buttons];
-                }
             }
 
             // Find all matching elements
@@ -254,6 +399,151 @@ NAV_CONTROLLER_SCRIPT = """
             // Always re-discover to catch lazy-loaded content and handle scroll
             this.discover();
             
+            // Use zone-based navigation for modals
+            if (this.inModalMode && this.zones.length > 0) {
+                return this.navigateModal(direction);
+            }
+            
+            // Standard row-based navigation
+            return this.navigateStandard(direction);
+        },
+
+        // Zone-based navigation for modal dialogs
+        navigateModal(direction) {
+            if (this.zones.length === 0) {
+                return { success: false, message: 'No zones found' };
+            }
+
+            const prevZone = this.currentZone;
+            const prevCol = this.currentCol;
+            
+            const zone = this.zones[this.currentZone];
+            const layout = zone.layout || 'horizontal';
+            
+            // Handle dropdown specially
+            if (this.dropdownOpen && zone.type === 'dropdown') {
+                return this.navigateDropdown(direction);
+            }
+            
+            switch (direction) {
+                case 'up':
+                    if (layout === 'vertical') {
+                        // In vertical zones (episodes), up moves within the zone
+                        if (this.currentCol > 0) {
+                            this.currentCol--;
+                        } else if (this.currentZone > 0) {
+                            // At top of zone, move to previous zone
+                            this.currentZone--;
+                            const newZone = this.zones[this.currentZone];
+                            this.currentCol = newZone.elements.length - 1;
+                        }
+                    } else {
+                        // In horizontal zones, up moves to previous zone
+                        if (this.currentZone > 0) {
+                            this.currentZone--;
+                            const newZone = this.zones[this.currentZone];
+                            // Try to maintain relative position or go to end
+                            this.currentCol = Math.min(this.currentCol, newZone.elements.length - 1);
+                        }
+                    }
+                    break;
+
+                case 'down':
+                    if (layout === 'vertical') {
+                        // In vertical zones (episodes), down moves within the zone
+                        if (this.currentCol < zone.elements.length - 1) {
+                            this.currentCol++;
+                        } else if (this.currentZone < this.zones.length - 1) {
+                            // At bottom of zone, move to next zone
+                            this.currentZone++;
+                            this.currentCol = 0;
+                        }
+                    } else {
+                        // In horizontal zones, down moves to next zone
+                        if (this.currentZone < this.zones.length - 1) {
+                            this.currentZone++;
+                            const newZone = this.zones[this.currentZone];
+                            this.currentCol = Math.min(this.currentCol, newZone.elements.length - 1);
+                        }
+                    }
+                    break;
+
+                case 'left':
+                    if (layout === 'horizontal' || layout === 'single') {
+                        // In horizontal zones, left/right moves within zone
+                        if (this.currentCol > 0) {
+                            this.currentCol--;
+                        }
+                    }
+                    // In vertical zones, left does nothing (or could move to previous zone)
+                    break;
+
+                case 'right':
+                    if (layout === 'horizontal' || layout === 'single') {
+                        // In horizontal zones, left/right moves within zone
+                        if (this.currentCol < zone.elements.length - 1) {
+                            this.currentCol++;
+                        }
+                    }
+                    // In vertical zones, right does nothing (or could move to next zone)
+                    break;
+
+                default:
+                    return { success: false, message: 'Invalid direction' };
+            }
+
+            // Sync currentRow with currentZone for updateFocus compatibility
+            this.currentRow = this.currentZone;
+
+            const moved = (prevZone !== this.currentZone || prevCol !== this.currentCol);
+            this.updateFocus();
+
+            return {
+                success: true,
+                moved: moved,
+                zone: this.currentZone,
+                zoneType: this.zones[this.currentZone]?.type,
+                col: this.currentCol,
+                totalZones: this.zones.length,
+                zoneLength: this.zones[this.currentZone]?.elements.length,
+                inModalMode: true
+            };
+        },
+
+        // Navigate within a season dropdown
+        navigateDropdown(direction) {
+            const zone = this.zones[0]; // Dropdown is always the only zone when open
+            const prevCol = this.currentCol;
+            
+            switch (direction) {
+                case 'up':
+                    if (this.currentCol > 0) {
+                        this.currentCol--;
+                    }
+                    break;
+                case 'down':
+                    if (this.currentCol < zone.elements.length - 1) {
+                        this.currentCol++;
+                    }
+                    break;
+                // left/right do nothing in dropdown
+            }
+            
+            const moved = prevCol !== this.currentCol;
+            this.currentRow = 0;
+            this.updateFocus();
+            
+            return {
+                success: true,
+                moved: moved,
+                dropdownOpen: true,
+                optionIndex: this.currentCol,
+                totalOptions: zone.elements.length
+            };
+        },
+
+        // Standard row-based navigation (non-modal)
+        navigateStandard(direction) {
             if (this.rows.length === 0) {
                 return { success: false, message: 'No elements found' };
             }
@@ -403,19 +693,35 @@ NAV_CONTROLLER_SCRIPT = """
         },
 
         getStatus() {
-            return {
+            const status = {
                 initialized: this.initialized,
                 elementCount: this.elements.length,
                 rowCount: this.rows.length,
                 currentRow: this.currentRow,
                 currentCol: this.currentCol,
-                hasFocus: !!this.focusedElement
+                hasFocus: !!this.focusedElement,
+                inModalMode: this.inModalMode
             };
+            
+            if (this.inModalMode) {
+                status.zoneCount = this.zones.length;
+                status.currentZone = this.currentZone;
+                status.zoneType = this.zones[this.currentZone]?.type;
+                status.dropdownOpen = this.dropdownOpen;
+            }
+            
+            return status;
         },
 
         reset() {
             this.currentRow = 0;
             this.currentCol = 0;
+            this.currentZone = 0;
+            this.inModalMode = false;
+            this.zones = [];
+            this.dropdownOpen = false;
+            this.dropdownOptions = [];
+            this.dropdownIndex = 0;
             this.discover();
             return { success: true };
         }

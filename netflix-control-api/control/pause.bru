@@ -1,0 +1,16 @@
+meta {
+  name: pause
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{host}}/control/pause
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

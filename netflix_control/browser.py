@@ -38,6 +38,16 @@ class BrowserManager:
         """Check if WebSocket is connected."""
         return self._ws is not None and self._ws.connected
     
+    def wait_for_exit(self) -> int:
+        """Block until the browser process exits.
+        
+        Returns:
+            The process exit code, or -1 if no process is running.
+        """
+        if self._process is None:
+            return -1
+        return self._process.wait()
+    
     def launch(self) -> None:
         """Launch the browser in kiosk mode with remote debugging."""
         if self.is_running:

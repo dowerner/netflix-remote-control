@@ -28,6 +28,7 @@ class NetflixControl:
         self.api = create_api(self.browser, self.auth, self.nav_state)
         self._shutdown_event = threading.Event()
         self._api_thread: Optional[threading.Thread] = None
+        self._monitor_thread: Optional[threading.Thread] = None
     
     def start(self, pin: Optional[int] = None, skip_login: bool = False) -> None:
         """Start the application.
@@ -65,6 +66,9 @@ class NetflixControl:
         print("Injecting navigation controller...")
         time.sleep(2)  # Wait for page to stabilize
         self._inject_navigation()
+        
+        # Start browser monitor to detect if browser is closed
+        self._start_browser_monitor()
         
         print("\nNetflix Control is ready!")
         print(f"API available at: http://{config.api_host}:{config.api_port}")
@@ -160,6 +164,23 @@ class NetflixControl:
         
         self._api_thread = threading.Thread(target=server.run, daemon=True)
         self._api_thread.start()
+    
+    def _start_browser_monitor(self) -> None:
+        """Start the browser monitoring thread."""
+        self._monitor_thread = threading.Thread(target=self._monitor_browser, daemon=True)
+        self._monitor_thread.start()
+    
+    def _monitor_browser(self) -> None:
+        """Wait for browser process to exit and trigger shutdown.
+        
+        This runs in a background thread and blocks until the browser process
+        terminates. When it does (user closes window, crash, etc.), it triggers
+        application shutdown.
+        """
+        self.browser.wait_for_exit()
+        if not self._shutdown_event.is_set():
+            print("\nBrowser closed - shutting down application...")
+            self.stop()
     
     def _signal_handler(self, signum, frame) -> None:
         """Handle shutdown signals."""
