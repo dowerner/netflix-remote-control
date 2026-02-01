@@ -661,3 +661,40 @@ class BrowserManager:
         from .js_nav import get_player_state_call
         result = self.execute_script(get_player_state_call())
         return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
+    def player_stop(self) -> Dict[str, Any]:
+        """Stop video playback and close the player.
+        
+        Pauses the video first, then clicks the exit button to return to browse.
+        
+        Returns:
+            Result dict with success status.
+        """
+        import time
+        
+        # First pause the video
+        self._ensure_player_controller()
+        from .js_nav import get_player_pause_call
+        self.execute_script(get_player_pause_call())
+        
+        # Brief delay for player controls to appear
+        time.sleep(0.3)
+        
+        # Click the exit button directly
+        click_result = self.execute_script("""
+            (function() {
+                const exitBtn = document.querySelector('[data-uia="nfplayer-exit"]');
+                if (exitBtn) {
+                    exitBtn.click();
+                    return { success: true, message: 'Exit button clicked' };
+                }
+                return { success: false, message: 'Exit button not found' };
+            })()
+        """)
+        
+        if click_result and click_result.get("success"):
+            return {"success": True, "message": "Player stopped and exited"}
+        
+        # Fallback: try go_back
+        self.go_back()
+        return {"success": True, "message": "Player stopped, used browser back"}

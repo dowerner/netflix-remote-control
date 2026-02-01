@@ -33,6 +33,11 @@ NAV_CONTROLLER_SCRIPT = """
         dropdownOpen: false,
         dropdownOptions: [],
         dropdownIndex: 0,
+        
+        // Player mode overlay auto-hide
+        inPlayerMode: false,
+        overlayHideTimeout: null,
+        OVERLAY_HIDE_DELAY: 5000,  // 5 seconds
 
         // Netflix red color for the focus overlay
         FOCUS_COLOR: '#E50914',
@@ -278,6 +283,7 @@ NAV_CONTROLLER_SCRIPT = """
             // Not in modal mode - use standard row-based discovery
             this.inModalMode = false;
             this.zones = [];
+            this.inPlayerMode = false;  // Will be set to true if on /watch/ page
             
             // Detect page context
             const url = window.location.href;
@@ -293,6 +299,7 @@ NAV_CONTROLLER_SCRIPT = """
                 }
             } else if (url.includes('/watch/')) {
                 selectors = [this.SELECTORS.playerControls];
+                this.inPlayerMode = true;
             } else if (url.includes('/search')) {
                 selectors = [this.SELECTORS.tiles, this.SELECTORS.buttons];
             } else {
@@ -683,12 +690,34 @@ NAV_CONTROLLER_SCRIPT = """
             if (rect.top < 100 || rect.bottom > window.innerHeight - 100) {
                 this.focusedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
+            
+            // In player mode, schedule auto-hide of overlay
+            this.scheduleOverlayHide();
         },
 
         hideFocus() {
             this.focusedElement = null;
             if (this.overlay) {
                 this.overlay.style.display = 'none';
+            }
+            // Clear any pending hide timeout
+            if (this.overlayHideTimeout) {
+                clearTimeout(this.overlayHideTimeout);
+                this.overlayHideTimeout = null;
+            }
+        },
+
+        scheduleOverlayHide() {
+            // Clear any existing timeout
+            if (this.overlayHideTimeout) {
+                clearTimeout(this.overlayHideTimeout);
+            }
+            // Schedule hiding the overlay after delay (only in player mode)
+            if (this.inPlayerMode) {
+                this.overlayHideTimeout = setTimeout(() => {
+                    this.hideFocus();
+                    this.overlayHideTimeout = null;
+                }, this.OVERLAY_HIDE_DELAY);
             }
         },
 
@@ -700,7 +729,8 @@ NAV_CONTROLLER_SCRIPT = """
                 currentRow: this.currentRow,
                 currentCol: this.currentCol,
                 hasFocus: !!this.focusedElement,
-                inModalMode: this.inModalMode
+                inModalMode: this.inModalMode,
+                inPlayerMode: this.inPlayerMode
             };
             
             if (this.inModalMode) {
@@ -718,10 +748,15 @@ NAV_CONTROLLER_SCRIPT = """
             this.currentCol = 0;
             this.currentZone = 0;
             this.inModalMode = false;
+            this.inPlayerMode = false;
             this.zones = [];
             this.dropdownOpen = false;
             this.dropdownOptions = [];
             this.dropdownIndex = 0;
+            if (this.overlayHideTimeout) {
+                clearTimeout(this.overlayHideTimeout);
+                this.overlayHideTimeout = null;
+            }
             this.discover();
             return { success: true };
         }
@@ -872,6 +907,25 @@ PLAYER_CONTROL_SCRIPT = """
                 muted: video.muted,
                 volume: video.volume
             };
+        },
+
+        stop() {
+            // First pause the video
+            const video = this.getVideo();
+            if (video && !video.paused) {
+                video.pause();
+            }
+            
+            // Click the exit button to close the player
+            const exitBtn = document.querySelector('[data-uia="nfplayer-exit"]');
+            if (exitBtn) {
+                exitBtn.click();
+                return { success: true, message: 'Player closed' };
+            }
+            
+            // Fallback: try pressing Escape via key event
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+            return { success: true, message: 'Escape key sent', method: 'keyboard' };
         }
     };
 
@@ -923,3 +977,12 @@ def get_player_state_call() -> str:
         JavaScript code string.
     """
     return "window.NetflixPlayer ? window.NetflixPlayer.getState() : {found: false, message: 'Not initialized'}"
+
+
+def get_player_stop_call() -> str:
+    """Get JavaScript code to stop playback and close player.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.stop() : {success: false, message: 'Not initialized'}"

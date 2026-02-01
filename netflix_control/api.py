@@ -157,6 +157,18 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
+    @app.post("/control/stop", response_model=ControlResponse)
+    async def stop():
+        """Stop video playback and close the player."""
+        try:
+            result = browser.player_stop()
+            if result.get("success"):
+                return ControlResponse(success=True, message=result.get("message", "Player stopped"))
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to stop"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
     @app.post("/control/fullscreen", response_model=ControlResponse)
     async def fullscreen():
         """Toggle fullscreen (sends F key)."""
