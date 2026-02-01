@@ -21,29 +21,36 @@ NAV_CONTROLLER_SCRIPT = """
         rows: [],
         currentRow: 0,
         currentCol: 0,
+        observer: null,
+        discoverTimeout: null,
 
         // Netflix red color for the focus overlay
         FOCUS_COLOR: '#E50914',
 
         // Selectors for different Netflix UI elements
         SELECTORS: {
-            // Browse page content tiles
-            tiles: '.title-card-container, .slider-item, .boxart-container',
+            // Browse page content tiles - use specific selector to avoid nested duplicates
+            tiles: '.slider-item > .title-card-container, .rowContainer .title-card-container',
             // Profile selection
             profiles: '.profile-icon, .profile-link, [data-uia="profile-link"]',
             // Navigation items
             navItems: '[data-uia="navigation-tab"], .navigation-tab',
             // Buttons with data-uia attributes
-            buttons: '[data-uia*="button"], [data-uia*="play"], [data-uia*="modal"]',
-            // Interactive elements in modals
-            modalItems: '.previewModal--container button, .previewModal--container a',
+            buttons: '[data-uia*="button"], [data-uia="play-button"], [data-uia="mylist-button"]',
+            // Interactive elements in modals (generic)
+            modalItems: '.previewModal--container [data-uia*="button"], .previewModal--container [role="button"]',
             // Player controls
             playerControls: '[data-uia^="control-"]',
+            // Episode list items (for series)
+            episodes: '.titleCard--container, .episodeLockup, [data-uia*="episode"]',
+            // Season/dropdown selector
+            seasonSelector: '[data-uia="dropdown-toggle"], .episodeSelector select, .seasonSelector',
         },
 
         init() {
             this.createOverlay();
             this.discover();
+            this.observeDOM();
             console.log('[NetflixNav] Initialized with', this.elements.length, 'elements');
             return { success: true, elementCount: this.elements.length };
         },
@@ -69,6 +76,43 @@ NAV_CONTROLLER_SCRIPT = """
             document.body.appendChild(this.overlay);
         },
 
+        observeDOM() {
+            // Watch for DOM changes to handle lazy-loaded content
+            if (this.observer) {
+                this.observer.disconnect();
+            }
+            
+            this.observer = new MutationObserver((mutations) => {
+                // Check if significant changes occurred
+                let shouldRediscover = false;
+                for (const mutation of mutations) {
+                    if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+                        // Check if the changes are relevant (not just the overlay)
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === 1 && node.id !== 'netflix-nav-overlay') {
+                                shouldRediscover = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (shouldRediscover) break;
+                }
+                
+                if (shouldRediscover) {
+                    // Debounce re-discovery
+                    clearTimeout(this.discoverTimeout);
+                    this.discoverTimeout = setTimeout(() => {
+                        this.discover();
+                    }, 300);
+                }
+            });
+            
+            this.observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        },
+
         discover() {
             this.elements = [];
             this.rows = [];
@@ -83,37 +127,58 @@ NAV_CONTROLLER_SCRIPT = """
                 if (profileGate) {
                     selectors = [this.SELECTORS.profiles];
                 } else {
-                    selectors = [this.SELECTORS.tiles, this.SELECTORS.navItems, this.SELECTORS.buttons];
+                    selectors = [this.SELECTORS.tiles, this.SELECTORS.navItems];
                 }
             } else if (url.includes('/watch/')) {
                 selectors = [this.SELECTORS.playerControls];
             } else if (url.includes('/search')) {
                 selectors = [this.SELECTORS.tiles, this.SELECTORS.buttons];
             } else {
-                // Generic - try all
-                selectors = [this.SELECTORS.tiles, this.SELECTORS.profiles, this.SELECTORS.buttons, this.SELECTORS.modalItems];
+                // Generic - try common selectors
+                selectors = [this.SELECTORS.tiles, this.SELECTORS.profiles, this.SELECTORS.buttons];
             }
 
-            // Check for modal overlay
-            const modal = document.querySelector('.previewModal--container, [data-uia="modal"]');
+            // Check for modal overlay (title detail view)
+            const modal = document.querySelector('.previewModal--container');
             if (modal) {
-                selectors = [this.SELECTORS.modalItems, this.SELECTORS.buttons];
+                // Check if it's a series (has episodes section)
+                const hasEpisodes = modal.querySelector('.Episodes, .episodeSelector, [data-uia*="episode"]');
+                if (hasEpisodes) {
+                    selectors = [
+                        this.SELECTORS.episodes,
+                        this.SELECTORS.seasonSelector,
+                        this.SELECTORS.buttons,
+                        this.SELECTORS.modalItems
+                    ];
+                } else {
+                    selectors = [this.SELECTORS.modalItems, this.SELECTORS.buttons];
+                }
             }
 
             // Find all matching elements
             const allElements = [];
+            const seenElements = new Set();
+            
             selectors.forEach(selector => {
                 try {
                     const found = document.querySelectorAll(selector);
                     found.forEach(el => {
+                        // Skip if already seen
+                        if (seenElements.has(el)) return;
+                        
                         // Only include visible elements
                         const rect = el.getBoundingClientRect();
-                        if (rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0) {
+                        if (rect.width > 10 && rect.height > 10 && 
+                            rect.top < window.innerHeight && rect.bottom > 0 &&
+                            rect.left < window.innerWidth && rect.right > 0) {
+                            seenElements.add(el);
                             allElements.push({
                                 element: el,
                                 rect: rect,
                                 y: Math.round(rect.top),
-                                x: Math.round(rect.left)
+                                x: Math.round(rect.left),
+                                width: rect.width,
+                                height: rect.height
                             });
                         }
                     });
@@ -122,23 +187,28 @@ NAV_CONTROLLER_SCRIPT = """
                 }
             });
 
-            // Remove duplicates (same element matched by multiple selectors)
-            const seen = new Set();
-            const uniqueElements = allElements.filter(item => {
-                if (seen.has(item.element)) return false;
-                seen.add(item.element);
+            // Filter out nested elements - keep only outermost
+            const filteredElements = allElements.filter(item => {
+                let parent = item.element.parentElement;
+                while (parent) {
+                    if (seenElements.has(parent)) {
+                        return false; // Skip - parent is already in our list
+                    }
+                    parent = parent.parentElement;
+                }
                 return true;
             });
 
-            // Sort by position and group into rows
-            uniqueElements.sort((a, b) => a.y - b.y || a.x - b.x);
+            // Sort by position
+            filteredElements.sort((a, b) => a.y - b.y || a.x - b.x);
 
-            // Group elements into rows (elements within 50px vertical distance)
+            // Group elements into rows using adaptive threshold
+            // Use 10% of viewport height or 80px, whichever is smaller
+            const ROW_THRESHOLD = Math.min(window.innerHeight * 0.1, 80);
             let currentRowY = -1000;
             let currentRowElements = [];
-            const ROW_THRESHOLD = 50;
 
-            uniqueElements.forEach(item => {
+            filteredElements.forEach(item => {
                 if (Math.abs(item.y - currentRowY) > ROW_THRESHOLD) {
                     // New row
                     if (currentRowElements.length > 0) {
@@ -171,6 +241,8 @@ NAV_CONTROLLER_SCRIPT = """
             // Update focus
             this.updateFocus();
 
+            console.log('[NetflixNav] Discovered', this.elements.length, 'elements in', this.rows.length, 'rows');
+
             return {
                 success: true,
                 elementCount: this.elements.length,
@@ -179,11 +251,11 @@ NAV_CONTROLLER_SCRIPT = """
         },
 
         navigate(direction) {
+            // Always re-discover to catch lazy-loaded content and handle scroll
+            this.discover();
+            
             if (this.rows.length === 0) {
-                this.discover();
-                if (this.rows.length === 0) {
-                    return { success: false, message: 'No elements found' };
-                }
+                return { success: false, message: 'No elements found' };
             }
 
             const prevRow = this.currentRow;
@@ -246,10 +318,12 @@ NAV_CONTROLLER_SCRIPT = """
                 // Scroll element into view first
                 this.focusedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
+                const elementToClick = this.focusedElement;
+                
                 // Small delay then click
                 setTimeout(() => {
                     // Try to find the most clickable child element
-                    const clickTarget = this.findClickableChild(this.focusedElement) || this.focusedElement;
+                    const clickTarget = this.findClickableChild(elementToClick) || elementToClick;
                     
                     // Focus the element first (helps with React)
                     if (clickTarget.focus) clickTarget.focus();
@@ -261,6 +335,11 @@ NAV_CONTROLLER_SCRIPT = """
                         view: window
                     });
                     clickTarget.dispatchEvent(clickEvent);
+                    
+                    // Re-discover after click since content may change
+                    setTimeout(() => {
+                        this.discover();
+                    }, 500);
                 }, 100);
 
                 return { success: true, message: 'Click dispatched' };
@@ -284,6 +363,11 @@ NAV_CONTROLLER_SCRIPT = """
         },
 
         updateFocus() {
+            // Ensure overlay exists
+            if (!this.overlay || !document.body.contains(this.overlay)) {
+                this.createOverlay();
+            }
+            
             if (this.rows.length === 0 || !this.rows[this.currentRow]) {
                 this.hideFocus();
                 return;
@@ -297,7 +381,7 @@ NAV_CONTROLLER_SCRIPT = """
 
             this.focusedElement = item.element;
 
-            // Update overlay position
+            // Update overlay position - get fresh rect in case element moved
             const rect = this.focusedElement.getBoundingClientRect();
             this.overlay.style.display = 'block';
             this.overlay.style.left = (rect.left - 3) + 'px';

@@ -475,6 +475,21 @@ class BrowserManager:
     
     # JavaScript Navigation methods (preferred over mouse simulation)
     
+    def _ensure_nav_controller(self) -> bool:
+        """Ensure the navigation controller is injected, reinject if missing.
+        
+        This handles page reloads (e.g., after profile selection) that dispose
+        the injected script.
+        
+        Returns:
+            True if controller was (re)injected, False if already present.
+        """
+        status = self.js_nav_status()
+        if not status.get("initialized"):
+            self.inject_nav_controller()
+            return True
+        return False
+    
     def inject_nav_controller(self) -> Dict[str, Any]:
         """Inject the JavaScript navigation controller into the page.
         
@@ -490,12 +505,17 @@ class BrowserManager:
     def js_navigate(self, direction: str) -> Dict[str, Any]:
         """Navigate using the injected JS controller.
         
+        Automatically reinjects the controller if the page was reloaded.
+        
         Args:
             direction: One of 'up', 'down', 'left', 'right'.
             
         Returns:
             Result dict with success status and position info.
         """
+        # Ensure controller is present (handles page reloads)
+        self._ensure_nav_controller()
+        
         from .js_nav import get_navigate_call
         result = self.execute_script(get_navigate_call(direction))
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
@@ -503,9 +523,14 @@ class BrowserManager:
     def js_select(self) -> Dict[str, Any]:
         """Select/click the focused element using JS controller.
         
+        Automatically reinjects the controller if the page was reloaded.
+        
         Returns:
             Result dict with success status.
         """
+        # Ensure controller is present (handles page reloads)
+        self._ensure_nav_controller()
+        
         from .js_nav import get_select_call
         result = self.execute_script(get_select_call())
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
@@ -513,9 +538,14 @@ class BrowserManager:
     def js_discover(self) -> Dict[str, Any]:
         """Discover/refresh interactive elements using JS controller.
         
+        Automatically reinjects the controller if the page was reloaded.
+        
         Returns:
             Result dict with element count.
         """
+        # Ensure controller is present (handles page reloads)
+        self._ensure_nav_controller()
+        
         from .js_nav import get_discover_call
         result = self.execute_script(get_discover_call())
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
@@ -533,9 +563,14 @@ class BrowserManager:
     def js_nav_reset(self) -> Dict[str, Any]:
         """Reset JS navigation state and re-discover elements.
         
+        Automatically reinjects the controller if the page was reloaded.
+        
         Returns:
             Result dict with success status.
         """
+        # Ensure controller is present (handles page reloads)
+        self._ensure_nav_controller()
+        
         from .js_nav import get_reset_call
         result = self.execute_script(get_reset_call())
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
