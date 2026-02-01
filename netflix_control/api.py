@@ -96,32 +96,64 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    # Playback control endpoints (keyboard-based)
+    # Playback control endpoints (JavaScript-based)
     
     @app.post("/control/play", response_model=ControlResponse)
     async def play():
-        """Start playback (sends Space key)."""
+        """Start video playback using JavaScript."""
         try:
-            browser.send_key(" ", "Space")
-            return ControlResponse(success=True, message="Play command sent")
+            result = browser.player_play()
+            if result.get("success"):
+                state = result.get("state", "playing")
+                method = result.get("method", "unknown")
+                return ControlResponse(success=True, message=f"Playback started ({state}, via {method})")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to start playback"))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/control/pause", response_model=ControlResponse)
     async def pause():
-        """Pause playback (sends Space key)."""
+        """Pause video playback using JavaScript."""
         try:
-            browser.send_key(" ", "Space")
-            return ControlResponse(success=True, message="Pause command sent")
+            result = browser.player_pause()
+            if result.get("success"):
+                state = result.get("state", "paused")
+                return ControlResponse(success=True, message=f"Playback paused ({state})")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to pause"))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/control/playpause", response_model=ControlResponse)
     async def playpause():
-        """Toggle play/pause (sends Space key)."""
+        """Toggle video play/pause using JavaScript."""
         try:
-            browser.send_key(" ", "Space")
-            return ControlResponse(success=True, message="Play/pause toggled")
+            result = browser.player_toggle()
+            if result.get("success"):
+                state = result.get("state", "toggled")
+                method = result.get("method", "unknown")
+                return ControlResponse(success=True, message=f"Playback toggled ({state}, via {method})")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to toggle playback"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/control/player/status", response_model=ControlResponse)
+    async def player_status():
+        """Get current video player state (playing, position, duration)."""
+        try:
+            result = browser.player_state()
+            if result.get("found"):
+                playing = "playing" if result.get("playing") else "paused"
+                current = result.get("currentTime", 0)
+                duration = result.get("duration", 0)
+                return ControlResponse(
+                    success=True,
+                    message=f"Player {playing}, {current:.1f}s / {duration:.1f}s"
+                )
+            else:
+                return ControlResponse(success=False, message="No video player found")
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     

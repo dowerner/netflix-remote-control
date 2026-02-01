@@ -62,6 +62,8 @@ class BrowserManager:
             "--disable-infobars",
             "--disable-session-crashed-bubble",
             "--disable-features=TranslateUI",
+            # Allow video playback control without user interaction (required for kiosk)
+            "--autoplay-policy=no-user-gesture-required",
         ]
         
         if config.kiosk_mode:
@@ -584,3 +586,78 @@ class BrowserManager:
         from .js_nav import get_reset_call
         result = self.execute_script(get_reset_call())
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    # JavaScript Player Control methods
+    
+    def _ensure_player_controller(self) -> bool:
+        """Ensure the player controller is injected, reinject if missing.
+        
+        Returns:
+            True if controller was (re)injected, False if already present.
+        """
+        # Check if already initialized
+        result = self.execute_script("window.NetflixPlayer && window.NetflixPlayer.initialized")
+        if not result:
+            self.inject_player_controller()
+            return True
+        return False
+    
+    def inject_player_controller(self) -> Dict[str, Any]:
+        """Inject the JavaScript player controller into the page.
+        
+        Returns:
+            Result dict with the NetflixPlayer object.
+        """
+        from .js_nav import get_player_script
+        result = self.execute_script(get_player_script())
+        return result if isinstance(result, dict) else {"initialized": True}
+    
+    def player_play(self) -> Dict[str, Any]:
+        """Start video playback using JavaScript.
+        
+        Uses the HTML5 video API directly, with fallback to clicking the play button.
+        
+        Returns:
+            Result dict with success status and player state.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_play_call
+        result = self.execute_script(get_player_play_call())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_pause(self) -> Dict[str, Any]:
+        """Pause video playback using JavaScript.
+        
+        Uses the HTML5 video API directly.
+        
+        Returns:
+            Result dict with success status and player state.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_pause_call
+        result = self.execute_script(get_player_pause_call())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_toggle(self) -> Dict[str, Any]:
+        """Toggle video playback using JavaScript.
+        
+        Uses the HTML5 video API directly, with fallback to clicking the play button.
+        
+        Returns:
+            Result dict with success status and new player state.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_toggle_call
+        result = self.execute_script(get_player_toggle_call())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_state(self) -> Dict[str, Any]:
+        """Get current video player state.
+        
+        Returns:
+            Dict with playing status, currentTime, duration, muted, volume.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_state_call
+        result = self.execute_script(get_player_state_call())
+        return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}

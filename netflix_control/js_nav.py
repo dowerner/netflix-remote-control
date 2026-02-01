@@ -787,3 +787,139 @@ def get_reset_call() -> str:
         JavaScript code string.
     """
     return "window.NetflixNav ? window.NetflixNav.reset() : {success: false, message: 'Not initialized'}"
+
+
+# Player control script - separate from navigation
+PLAYER_CONTROL_SCRIPT = """
+(function() {
+    // Prevent re-initialization
+    if (window.NetflixPlayer && window.NetflixPlayer.initialized) {
+        return window.NetflixPlayer;
+    }
+
+    window.NetflixPlayer = {
+        initialized: true,
+
+        getVideo() {
+            return document.querySelector('video');
+        },
+
+        isPlaying() {
+            const video = this.getVideo();
+            return video && !video.paused;
+        },
+
+        play() {
+            const video = this.getVideo();
+            if (video) {
+                if (video.paused) {
+                    video.play();
+                    return { success: true, state: 'playing', method: 'video' };
+                }
+                return { success: true, state: 'playing', message: 'Already playing' };
+            }
+            // Fallback: click play button
+            const btn = document.querySelector('[data-uia="player-blocked-play"]');
+            if (btn) {
+                btn.click();
+                return { success: true, state: 'playing', method: 'button' };
+            }
+            return { success: false, message: 'No video or play button found' };
+        },
+
+        pause() {
+            const video = this.getVideo();
+            if (video) {
+                if (!video.paused) {
+                    video.pause();
+                    return { success: true, state: 'paused', method: 'video' };
+                }
+                return { success: true, state: 'paused', message: 'Already paused' };
+            }
+            return { success: false, message: 'No video found' };
+        },
+
+        toggle() {
+            const video = this.getVideo();
+            if (video) {
+                if (video.paused) {
+                    video.play();
+                    return { success: true, state: 'playing', method: 'video' };
+                } else {
+                    video.pause();
+                    return { success: true, state: 'paused', method: 'video' };
+                }
+            }
+            // Fallback: click play/pause button
+            const btn = document.querySelector('[data-uia="player-blocked-play"]');
+            if (btn) {
+                btn.click();
+                return { success: true, state: 'toggled', method: 'button' };
+            }
+            return { success: false, message: 'No video or play button found' };
+        },
+
+        getState() {
+            const video = this.getVideo();
+            if (!video) {
+                return { found: false, playing: false };
+            }
+            return {
+                found: true,
+                playing: !video.paused,
+                currentTime: video.currentTime,
+                duration: video.duration,
+                muted: video.muted,
+                volume: video.volume
+            };
+        }
+    };
+
+    return window.NetflixPlayer;
+})();
+"""
+
+
+def get_player_script() -> str:
+    """Get the player control script for injection.
+    
+    Returns:
+        JavaScript code string to inject into the page.
+    """
+    return PLAYER_CONTROL_SCRIPT
+
+
+def get_player_play_call() -> str:
+    """Get JavaScript code to start playback.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.play() : {success: false, message: 'Not initialized'}"
+
+
+def get_player_pause_call() -> str:
+    """Get JavaScript code to pause playback.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.pause() : {success: false, message: 'Not initialized'}"
+
+
+def get_player_toggle_call() -> str:
+    """Get JavaScript code to toggle playback.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.toggle() : {success: false, message: 'Not initialized'}"
+
+
+def get_player_state_call() -> str:
+    """Get JavaScript code to get player state.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.getState() : {found: false, message: 'Not initialized'}"
