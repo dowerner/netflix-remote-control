@@ -527,6 +527,7 @@ class BrowserManager:
         """
         # Ensure controller is present (handles page reloads)
         self._ensure_nav_controller()
+        self._ensure_player_controller()
         
         from .js_nav import get_navigate_call
         result = self.execute_script(get_navigate_call(direction))
@@ -542,6 +543,7 @@ class BrowserManager:
         """
         # Ensure controller is present (handles page reloads)
         self._ensure_nav_controller()
+        self._ensure_player_controller()
         
         from .js_nav import get_select_call
         result = self.execute_script(get_select_call())
@@ -557,6 +559,7 @@ class BrowserManager:
         """
         # Ensure controller is present (handles page reloads)
         self._ensure_nav_controller()
+        self._ensure_player_controller()
         
         from .js_nav import get_discover_call
         result = self.execute_script(get_discover_call())
@@ -661,6 +664,34 @@ class BrowserManager:
         from .js_nav import get_player_state_call
         result = self.execute_script(get_player_state_call())
         return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
+    def player_skip_forward(self, seconds: int = 10) -> Dict[str, Any]:
+        """Skip forward in the video by manipulating currentTime.
+        
+        Args:
+            seconds: Number of seconds to skip forward (default 10).
+        
+        Returns:
+            Result dict with success status and new position.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_skip_forward_call
+        result = self.execute_script(get_player_skip_forward_call(seconds))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_skip_backward(self, seconds: int = 10) -> Dict[str, Any]:
+        """Skip backward in the video by manipulating currentTime.
+        
+        Args:
+            seconds: Number of seconds to skip backward (default 10).
+        
+        Returns:
+            Result dict with success status and new position.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_skip_backward_call
+        result = self.execute_script(get_player_skip_backward_call(seconds))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
     
     def player_stop(self) -> Dict[str, Any]:
         """Stop video playback and close the player.

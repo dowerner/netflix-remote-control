@@ -169,6 +169,32 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
+    @app.post("/control/skip/forward", response_model=ControlResponse)
+    async def skip_forward():
+        """Skip forward in the video by 10 seconds."""
+        try:
+            result = browser.player_skip_forward()
+            if result.get("success"):
+                new_time = result.get("newTime", 0)
+                return ControlResponse(success=True, message=f"Skipped forward to {new_time:.1f}s")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to skip"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/skip/backward", response_model=ControlResponse)
+    async def skip_backward():
+        """Skip backward in the video by 10 seconds."""
+        try:
+            result = browser.player_skip_backward()
+            if result.get("success"):
+                new_time = result.get("newTime", 0)
+                return ControlResponse(success=True, message=f"Skipped backward to {new_time:.1f}s")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to skip"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
     @app.post("/control/fullscreen", response_model=ControlResponse)
     async def fullscreen():
         """Toggle fullscreen (sends F key)."""

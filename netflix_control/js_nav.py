@@ -926,6 +926,38 @@ PLAYER_CONTROL_SCRIPT = """
             // Fallback: try pressing Escape via key event
             document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
             return { success: true, message: 'Escape key sent', method: 'keyboard' };
+        },
+
+        skipForward(seconds = 10) {
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No video found' };
+            }
+            const oldTime = video.currentTime;
+            video.currentTime = Math.min(video.currentTime + seconds, video.duration);
+            return {
+                success: true,
+                message: 'Skipped forward',
+                oldTime: oldTime,
+                newTime: video.currentTime,
+                duration: video.duration
+            };
+        },
+
+        skipBackward(seconds = 10) {
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No video found' };
+            }
+            const oldTime = video.currentTime;
+            video.currentTime = Math.max(video.currentTime - seconds, 0);
+            return {
+                success: true,
+                message: 'Skipped backward',
+                oldTime: oldTime,
+                newTime: video.currentTime,
+                duration: video.duration
+            };
         }
     };
 
@@ -986,3 +1018,27 @@ def get_player_stop_call() -> str:
         JavaScript code string.
     """
     return "window.NetflixPlayer ? window.NetflixPlayer.stop() : {success: false, message: 'Not initialized'}"
+
+
+def get_player_skip_forward_call(seconds: int = 10) -> str:
+    """Get JavaScript code to skip forward.
+    
+    Args:
+        seconds: Number of seconds to skip forward.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return f"window.NetflixPlayer ? window.NetflixPlayer.skipForward({seconds}) : {{success: false, message: 'Not initialized'}}"
+
+
+def get_player_skip_backward_call(seconds: int = 10) -> str:
+    """Get JavaScript code to skip backward.
+    
+    Args:
+        seconds: Number of seconds to skip backward.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return f"window.NetflixPlayer ? window.NetflixPlayer.skipBackward({seconds}) : {{success: false, message: 'Not initialized'}}"

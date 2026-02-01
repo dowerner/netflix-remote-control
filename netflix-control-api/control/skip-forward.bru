@@ -1,0 +1,16 @@
+meta {
+  name: skip-forward
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{host}}/control/skip/forward
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
