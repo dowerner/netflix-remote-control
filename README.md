@@ -85,6 +85,14 @@ python run.py --pin 1234
 | `/control/home` | POST | - | Go to Netflix home |
 | `/control/refresh` | POST | - | Refresh UI element discovery |
 
+### Search
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/control/search/open` | POST | - | Open the search box |
+| `/control/search` | POST | `{"query": "search text"}` | Type search query |
+| `/control/search/clear` | POST | - | Clear search input |
+
 ### Authentication
 
 | Endpoint | Method | Body | Description |
@@ -114,6 +122,11 @@ curl -X POST http://localhost:8080/control/playpause
 
 # Toggle fullscreen
 curl -X POST http://localhost:8080/control/fullscreen
+
+# Search for content
+curl -X POST http://localhost:8080/control/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "stranger things"}'
 ```
 
 ## Architecture

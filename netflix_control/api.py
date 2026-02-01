@@ -31,6 +31,11 @@ class PinRequest(BaseModel):
     pin: int
 
 
+class SearchRequest(BaseModel):
+    """Request body for search operations."""
+    query: str
+
+
 class StatusResponse(BaseModel):
     """Response for status endpoint."""
     status: str
@@ -295,6 +300,47 @@ def create_api(
             return ControlResponse(
                 success=result.get("success", False),
                 message=f"Nav controller injected, found {result.get('elementCount', 0)} elements"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    # Search endpoints
+    
+    @app.post("/control/search/open", response_model=ControlResponse)
+    async def open_search():
+        """Open the search box by clicking the search icon."""
+        try:
+            result = browser.open_search()
+            return ControlResponse(
+                success=result.get("success", False),
+                message=result.get("message", "Search operation completed")
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/search", response_model=ControlResponse)
+    async def search(request: SearchRequest):
+        """Type a search query into the search box.
+        
+        Opens search if not already open, clears existing text, and types the query.
+        """
+        try:
+            result = browser.search_type(request.query)
+            return ControlResponse(
+                success=result.get("success", False),
+                message=result.get("message", "Search completed")
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/search/clear", response_model=ControlResponse)
+    async def clear_search():
+        """Clear the search input field."""
+        try:
+            result = browser.clear_search()
+            return ControlResponse(
+                success=result.get("success", False),
+                message=result.get("message", "Search cleared")
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

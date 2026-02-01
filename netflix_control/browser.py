@@ -297,6 +297,124 @@ class BrowserManager:
                 "text": char,
             })
     
+    # Search methods
+    
+    def open_search(self) -> Dict[str, Any]:
+        """Open the Netflix search box by clicking the search icon.
+        
+        Returns:
+            Result dict with success status.
+        """
+        result = self.execute_script("""
+            (function() {
+                // First check if search input is already visible
+                const existingInput = document.querySelector('[data-uia="search-box-input"], input[name="searchInput"], .searchInput input');
+                if (existingInput && existingInput.offsetParent !== null) {
+                    existingInput.focus();
+                    return { success: true, message: 'Search already open, focused input' };
+                }
+                
+                // Click the search icon to open search
+                const searchIcon = document.querySelector('[data-uia="search-box-launcher"], [data-uia="search-box"], .searchTab, [aria-label="Search"]');
+                if (searchIcon) {
+                    searchIcon.click();
+                    return { success: true, message: 'Search icon clicked' };
+                }
+                
+                return { success: false, message: 'Search icon not found' };
+            })()
+        """)
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def focus_search_input(self) -> Dict[str, Any]:
+        """Focus the search input field.
+        
+        Returns:
+            Result dict with success status.
+        """
+        result = self.execute_script("""
+            (function() {
+                const input = document.querySelector('[data-uia="search-box-input"], input[name="searchInput"], .searchInput input');
+                if (input) {
+                    input.focus();
+                    return { success: true, message: 'Search input focused' };
+                }
+                return { success: false, message: 'Search input not found' };
+            })()
+        """)
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def search_type(self, query: str, clear_first: bool = True) -> Dict[str, Any]:
+        """Type text into the search input field.
+        
+        Args:
+            query: The search text to type.
+            clear_first: If True, clear existing text before typing.
+        
+        Returns:
+            Result dict with success status.
+        """
+        import time
+        
+        # First ensure search is open and focused
+        open_result = self.open_search()
+        if not open_result.get("success"):
+            return open_result
+        
+        # Brief delay for search to open
+        time.sleep(0.3)
+        
+        # Focus the input
+        focus_result = self.focus_search_input()
+        if not focus_result.get("success"):
+            return focus_result
+        
+        # Clear existing text if requested
+        if clear_first:
+            self.execute_script("""
+                (function() {
+                    const input = document.querySelector('[data-uia="search-box-input"], input[name="searchInput"], .searchInput input');
+                    if (input) {
+                        input.value = '';
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                })()
+            """)
+        
+        # Type the query character by character
+        self.send_text(query)
+        
+        # Trigger input event to ensure Netflix registers the text
+        self.execute_script("""
+            (function() {
+                const input = document.querySelector('[data-uia="search-box-input"], input[name="searchInput"], .searchInput input');
+                if (input) {
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            })()
+        """)
+        
+        return {"success": True, "message": f"Typed '{query}' into search"}
+    
+    def clear_search(self) -> Dict[str, Any]:
+        """Clear the search input field.
+        
+        Returns:
+            Result dict with success status.
+        """
+        result = self.execute_script("""
+            (function() {
+                const input = document.querySelector('[data-uia="search-box-input"], input[name="searchInput"], .searchInput input');
+                if (input) {
+                    input.value = '';
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    return { success: true, message: 'Search cleared' };
+                }
+                return { success: false, message: 'Search input not found' };
+            })()
+        """)
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
     # Mouse input methods
     
     def mouse_move(self, x: int, y: int) -> None:

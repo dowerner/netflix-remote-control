@@ -66,6 +66,14 @@ NAV_CONTROLLER_SCRIPT = """
             modalHeaderButtons: '[data-uia="play-button"], [data-uia="add-to-my-list"], [data-uia="thumbs-rate-button"], [data-uia="audio-toggle-unmuted"], [data-uia="audio-toggle-muted"], [data-uia="previewModal-closebtn"]',
             // More Like This section cards
             moreLikeThis: '.moreToExplore [data-uia="titleCard--container"], [data-uia="trailersAndMore--container"] [data-uia="titleCard--container"], .moreLikeThis [data-uia="titleCard--container"]',
+            // Search box input field
+            searchInput: '[data-uia="search-box-input"], input[name="searchInput"], .searchInput input, .searchBox input',
+            // Search icon/button in header
+            searchIcon: '[data-uia="search-box-launcher"], [data-uia="search-box"], .searchTab, [aria-label="Search"]',
+            // Header elements (tabs, search, search input, notifications, account)
+            headerItems: '.navigation-tab a, [data-uia="search-box-launcher"], .searchBox input, [data-uia="search-box-input"], [data-uia="main-header-kids-link"] a, [data-uia="notifications-menu-button"], [data-uia="account-dropdown-button"] a',
+            // Search results - suggestions and gallery video cards
+            searchResults: '[data-uia="search-suggestion-item-link"], [data-uia="search-gallery-video-card"]',
         },
 
         init() {
@@ -295,16 +303,18 @@ NAV_CONTROLLER_SCRIPT = """
                 if (profileGate) {
                     selectors = [this.SELECTORS.profiles];
                 } else {
-                    selectors = [this.SELECTORS.tiles, this.SELECTORS.navItems];
+                    // Include header items (nav tabs, search, etc.) and content tiles
+                    selectors = [this.SELECTORS.headerItems, this.SELECTORS.tiles];
                 }
             } else if (url.includes('/watch/')) {
                 selectors = [this.SELECTORS.playerControls];
                 this.inPlayerMode = true;
             } else if (url.includes('/search')) {
-                selectors = [this.SELECTORS.tiles, this.SELECTORS.buttons];
+                // Search page: header items, search input, and search results
+                selectors = [this.SELECTORS.headerItems, this.SELECTORS.searchInput, this.SELECTORS.searchResults];
             } else {
-                // Generic - try common selectors
-                selectors = [this.SELECTORS.tiles, this.SELECTORS.profiles, this.SELECTORS.buttons];
+                // Generic - try common selectors including header
+                selectors = [this.SELECTORS.headerItems, this.SELECTORS.tiles, this.SELECTORS.profiles, this.SELECTORS.buttons];
             }
 
             // Find all matching elements
@@ -340,7 +350,14 @@ NAV_CONTROLLER_SCRIPT = """
             });
 
             // Filter out nested elements - keep only outermost
+            // Exception: always keep input/textarea elements as they need to be focusable
             const filteredElements = allElements.filter(item => {
+                // Always keep input elements - they need to be directly selectable
+                const tagName = item.element.tagName;
+                if (tagName === 'INPUT' || tagName === 'TEXTAREA') {
+                    return true;
+                }
+                
                 let parent = item.element.parentElement;
                 while (parent) {
                     if (seenElements.has(parent)) {
@@ -617,6 +634,15 @@ NAV_CONTROLLER_SCRIPT = """
 
                 const elementToClick = this.focusedElement;
                 
+                // Check if the focused element is an input - if so, just focus it
+                if (elementToClick.tagName === 'INPUT' || elementToClick.tagName === 'TEXTAREA') {
+                    elementToClick.focus();
+                    return { success: true, message: 'Input focused', isInput: true };
+                }
+                
+                // Check if this element is inside a searchBox
+                const searchBox = elementToClick.closest('.searchBox');
+                
                 // Small delay then click
                 setTimeout(() => {
                     // Try to find the most clickable child element
@@ -633,6 +659,11 @@ NAV_CONTROLLER_SCRIPT = """
                     });
                     clickTarget.dispatchEvent(clickEvent);
                     
+                    // If this was a search box click, wait for input to appear and focus it
+                    if (searchBox) {
+                        this.waitForSearchInput(searchBox);
+                    }
+                    
                     // Re-discover after click since content may change
                     setTimeout(() => {
                         this.discover();
@@ -642,6 +673,21 @@ NAV_CONTROLLER_SCRIPT = """
                 return { success: true, message: 'Click dispatched' };
             } catch (e) {
                 return { success: false, message: e.toString() };
+            }
+        },
+        
+        waitForSearchInput(searchBox, attempts = 0) {
+            // Look for input inside the searchBox
+            const input = searchBox.querySelector('input[type="text"], input:not([type]), [data-uia="search-box-input"]');
+            if (input) {
+                input.focus();
+                console.log('[NetflixNav] Search input focused');
+                return;
+            }
+            
+            // Retry up to 10 times (1 second total)
+            if (attempts < 10) {
+                setTimeout(() => this.waitForSearchInput(searchBox, attempts + 1), 100);
             }
         },
 
