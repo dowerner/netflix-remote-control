@@ -560,7 +560,7 @@ class BrowserManager:
         # Ensure controller is present (handles page reloads)
         self._ensure_nav_controller()
         self._ensure_player_controller()
-        
+
         from .js_nav import get_discover_call
         result = self.execute_script(get_discover_call())
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
@@ -665,33 +665,65 @@ class BrowserManager:
         result = self.execute_script(get_player_state_call())
         return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
     
-    def player_skip_forward(self, seconds: int = 10) -> Dict[str, Any]:
-        """Skip forward in the video by manipulating currentTime.
+    def player_skip_forward(self) -> Dict[str, Any]:
+        """Skip forward 10 seconds by clicking the skip button.
         
-        Args:
-            seconds: Number of seconds to skip forward (default 10).
+        Triggers player controls to appear, then clicks the forward skip button.
         
         Returns:
-            Result dict with success status and new position.
+            Result dict with success status.
         """
-        self._ensure_player_controller()
-        from .js_nav import get_player_skip_forward_call
-        result = self.execute_script(get_player_skip_forward_call(seconds))
-        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+        import time
+        
+        # Move mouse to center of video to trigger controls
+        self._trigger_player_controls()
+        time.sleep(0.3)
+        
+        # Click the forward skip button
+        click_result = self.execute_script("""
+            (function() {
+                const btn = document.querySelector('[data-uia="control-forward10"]');
+                if (btn) {
+                    btn.click();
+                    return { success: true, message: 'Skipped forward 10 seconds' };
+                }
+                return { success: false, message: 'Skip forward button not found' };
+            })()
+        """)
+        
+        return click_result if isinstance(click_result, dict) else {"success": False, "error": "Invalid result"}
     
-    def player_skip_backward(self, seconds: int = 10) -> Dict[str, Any]:
-        """Skip backward in the video by manipulating currentTime.
+    def player_skip_backward(self) -> Dict[str, Any]:
+        """Skip backward 10 seconds by clicking the skip button.
         
-        Args:
-            seconds: Number of seconds to skip backward (default 10).
+        Triggers player controls to appear, then clicks the backward skip button.
         
         Returns:
-            Result dict with success status and new position.
+            Result dict with success status.
         """
-        self._ensure_player_controller()
-        from .js_nav import get_player_skip_backward_call
-        result = self.execute_script(get_player_skip_backward_call(seconds))
-        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+        import time
+        
+        # Move mouse to center of video to trigger controls
+        self._trigger_player_controls()
+        time.sleep(0.3)
+        
+        # Click the backward skip button
+        click_result = self.execute_script("""
+            (function() {
+                const btn = document.querySelector('[data-uia="control-back10"]');
+                if (btn) {
+                    btn.click();
+                    return { success: true, message: 'Skipped backward 10 seconds' };
+                }
+                return { success: false, message: 'Skip backward button not found' };
+            })()
+        """)
+        
+        return click_result if isinstance(click_result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def _trigger_player_controls(self) -> None:
+        """Trigger player controls to appear by moving mouse to video center."""
+        self.send_key("Escape", "Escape")
     
     def player_stop(self) -> Dict[str, Any]:
         """Stop video playback and close the player.

@@ -171,27 +171,25 @@ def create_api(
     
     @app.post("/control/skip/forward", response_model=ControlResponse)
     async def skip_forward():
-        """Skip forward in the video by 10 seconds."""
+        """Skip forward in the video by 10 seconds (clicks skip button)."""
         try:
             result = browser.player_skip_forward()
             if result.get("success"):
-                new_time = result.get("newTime", 0)
-                return ControlResponse(success=True, message=f"Skipped forward to {new_time:.1f}s")
+                return ControlResponse(success=True, message=result.get("message", "Skipped forward 10 seconds"))
             else:
-                return ControlResponse(success=False, message=result.get("message", "Failed to skip"))
+                return ControlResponse(success=False, message=result.get("message", "Failed to skip forward"))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/control/skip/backward", response_model=ControlResponse)
     async def skip_backward():
-        """Skip backward in the video by 10 seconds."""
+        """Skip backward in the video by 10 seconds (clicks skip button)."""
         try:
             result = browser.player_skip_backward()
             if result.get("success"):
-                new_time = result.get("newTime", 0)
-                return ControlResponse(success=True, message=f"Skipped backward to {new_time:.1f}s")
+                return ControlResponse(success=True, message=result.get("message", "Skipped backward 10 seconds"))
             else:
-                return ControlResponse(success=False, message=result.get("message", "Failed to skip"))
+                return ControlResponse(success=False, message=result.get("message", "Failed to skip backward"))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
