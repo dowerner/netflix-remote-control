@@ -472,3 +472,70 @@ class BrowserManager:
     def clear_cookies(self) -> None:
         """Clear all browser cookies."""
         self.ws_request("Network.clearBrowserCookies")
+    
+    # JavaScript Navigation methods (preferred over mouse simulation)
+    
+    def inject_nav_controller(self) -> Dict[str, Any]:
+        """Inject the JavaScript navigation controller into the page.
+        
+        This should be called after page load to enable JS-based navigation.
+        
+        Returns:
+            Result dict with success status and element count.
+        """
+        from .js_nav import get_nav_script
+        result = self.execute_script(get_nav_script())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def js_navigate(self, direction: str) -> Dict[str, Any]:
+        """Navigate using the injected JS controller.
+        
+        Args:
+            direction: One of 'up', 'down', 'left', 'right'.
+            
+        Returns:
+            Result dict with success status and position info.
+        """
+        from .js_nav import get_navigate_call
+        result = self.execute_script(get_navigate_call(direction))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def js_select(self) -> Dict[str, Any]:
+        """Select/click the focused element using JS controller.
+        
+        Returns:
+            Result dict with success status.
+        """
+        from .js_nav import get_select_call
+        result = self.execute_script(get_select_call())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def js_discover(self) -> Dict[str, Any]:
+        """Discover/refresh interactive elements using JS controller.
+        
+        Returns:
+            Result dict with element count.
+        """
+        from .js_nav import get_discover_call
+        result = self.execute_script(get_discover_call())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def js_nav_status(self) -> Dict[str, Any]:
+        """Get the status of the JS navigation controller.
+        
+        Returns:
+            Status dict with position and element info.
+        """
+        from .js_nav import get_status_call
+        result = self.execute_script(get_status_call())
+        return result if isinstance(result, dict) else {"initialized": False}
+    
+    def js_nav_reset(self) -> Dict[str, Any]:
+        """Reset JS navigation state and re-discover elements.
+        
+        Returns:
+            Result dict with success status.
+        """
+        from .js_nav import get_reset_call
+        result = self.execute_script(get_reset_call())
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}

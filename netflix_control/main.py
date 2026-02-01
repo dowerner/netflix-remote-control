@@ -61,11 +61,10 @@ class NetflixControl:
         print(f"Starting API server on {config.api_host}:{config.api_port}...")
         self._start_api_server()
         
-        # Discover initial elements
-        print("Discovering UI elements...")
+        # Inject JS navigation controller and discover elements
+        print("Injecting navigation controller...")
         time.sleep(2)  # Wait for page to stabilize
-        self.nav_state.discover_elements(self.browser)
-        print(f"Found {len(self.nav_state.elements)} interactive elements")
+        self._inject_navigation()
         
         print("\nNetflix Control is ready!")
         print(f"API available at: http://{config.api_host}:{config.api_port}")
@@ -107,6 +106,8 @@ class NetflixControl:
         
         if self.auth.is_logged_in():
             print("Already logged in via browser profile")
+            # Inject navigation controller
+            self._inject_navigation()
             return
         
         # Need to login
@@ -118,6 +119,10 @@ class NetflixControl:
         if self.auth.wait_for_login(timeout=300):
             print("Login successful!")
             
+            # Inject navigation controller after login
+            time.sleep(2)  # Wait for browse page to load
+            self._inject_navigation()
+            
             # Offer to save session
             try:
                 pin = self.auth.save_session()
@@ -127,6 +132,21 @@ class NetflixControl:
                 print(f"Warning: Could not save session: {e}")
         else:
             print("Login timeout. You can login later via the API.")
+    
+    def _inject_navigation(self) -> None:
+        """Inject the JavaScript navigation controller into the page."""
+        try:
+            result = self.browser.inject_nav_controller()
+            if result.get("success"):
+                print(f"Navigation controller ready - found {result.get('elementCount', 0)} elements")
+            else:
+                print(f"Warning: Navigation controller injection returned: {result}")
+        except Exception as e:
+            print(f"Warning: Could not inject navigation controller: {e}")
+            # Fall back to legacy discovery
+            print("Falling back to legacy element discovery...")
+            self.nav_state.discover_elements(self.browser)
+            print(f"Found {len(self.nav_state.elements)} elements (legacy)")
     
     def _start_api_server(self) -> None:
         """Start the API server in a background thread."""

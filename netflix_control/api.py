@@ -36,7 +36,7 @@ class StatusResponse(BaseModel):
     status: str
     context: str
     url: str
-    focused_element: Optional[dict] = None
+    nav_status: Optional[dict] = None
 
 
 class AuthStatusResponse(BaseModel):
@@ -85,18 +85,13 @@ def create_api(
         try:
             nav_state.detect_context(browser)
             url = browser.get_current_url()
-            focused = nav_state.get_focused_element()
+            js_status = browser.js_nav_status()
             
             return StatusResponse(
                 status="running",
                 context=nav_state.context.value,
                 url=url,
-                focused_element={
-                    "row": focused.row,
-                    "col": focused.col,
-                    "x": focused.x,
-                    "y": focused.y,
-                } if focused else None,
+                nav_status=js_status if js_status.get("initialized") else None,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -158,25 +153,101 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    # Navigation endpoints (mouse-based)
+    # Navigation endpoints (JavaScript-based - preferred)
     
     @app.post("/control/navigate", response_model=ControlResponse)
     async def navigate(request: NavigateRequest):
-        """Navigate in a direction (up/down/left/right)."""
+        """Navigate in a direction (up/down/left/right) using JS injection."""
         try:
-            # Refresh element discovery if needed
+            result = browser.js_navigate(request.direction.value)
+            
+            if result.get("success"):
+                if result.get("moved"):
+                    return ControlResponse(
+                        success=True,
+                        message=f"Navigated {request.direction.value} to row={result.get('row')}, col={result.get('col')}"
+                    )
+                else:
+                    return ControlResponse(
+                        success=True,
+                        message=f"Already at {request.direction.value} boundary"
+                    )
+            else:
+                return ControlResponse(
+                    success=False,
+                    message=result.get("message", "Navigation failed")
+                )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/select", response_model=ControlResponse)
+    async def select():
+        """Click the currently focused element using JS injection."""
+        try:
+            result = browser.js_select()
+            
+            if result.get("success"):
+                return ControlResponse(success=True, message="Element clicked")
+            else:
+                return ControlResponse(
+                    success=False,
+                    message=result.get("message", "No element focused")
+                )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/home", response_model=ControlResponse)
+    async def home():
+        """Navigate to Netflix home/browse page."""
+        try:
+            auth.navigate_to_browse()
+            # Re-inject nav controller and discover elements
+            browser.inject_nav_controller()
+            return ControlResponse(success=True, message="Navigated to home")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/refresh", response_model=ControlResponse)
+    async def refresh_elements():
+        """Refresh discovered UI elements using JS injection."""
+        try:
+            result = browser.js_discover()
+            return ControlResponse(
+                success=result.get("success", False),
+                message=f"Discovered {result.get('elementCount', 0)} elements in {result.get('rowCount', 0)} rows"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/inject", response_model=ControlResponse)
+    async def inject_nav():
+        """Inject/reinject the navigation controller into the page."""
+        try:
+            result = browser.inject_nav_controller()
+            return ControlResponse(
+                success=result.get("success", False),
+                message=f"Nav controller injected, found {result.get('elementCount', 0)} elements"
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    # Legacy navigation endpoints (mouse-based - deprecated)
+    
+    @app.post("/control/legacy/navigate", response_model=ControlResponse)
+    async def legacy_navigate(request: NavigateRequest):
+        """[DEPRECATED] Navigate using mouse simulation. Use /control/navigate instead."""
+        try:
             if not nav_state.elements:
                 nav_state.discover_elements(browser)
             
             element = nav_state.navigate(request.direction.value)
             
             if element:
-                # Move mouse to element to show hover effect
                 cx, cy = element.center
                 browser.mouse_move(cx, cy)
                 return ControlResponse(
                     success=True,
-                    message=f"Navigated {request.direction.value} to row={element.row}, col={element.col}"
+                    message=f"[Legacy] Navigated {request.direction.value} to row={element.row}, col={element.col}"
                 )
             else:
                 return ControlResponse(
@@ -186,41 +257,18 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    @app.post("/control/select", response_model=ControlResponse)
-    async def select():
-        """Click the currently focused element."""
+    @app.post("/control/legacy/select", response_model=ControlResponse)
+    async def legacy_select():
+        """[DEPRECATED] Click using mouse simulation. Use /control/select instead."""
         try:
             element = nav_state.get_focused_element()
             
             if element:
                 cx, cy = element.center
                 browser.mouse_click(cx, cy)
-                return ControlResponse(success=True, message="Element selected")
+                return ControlResponse(success=True, message="[Legacy] Element selected")
             else:
                 return ControlResponse(success=False, message="No element focused")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    
-    @app.post("/control/home", response_model=ControlResponse)
-    async def home():
-        """Navigate to Netflix home/browse page."""
-        try:
-            auth.navigate_to_browse()
-            nav_state.reset_focus()
-            nav_state.discover_elements(browser)
-            return ControlResponse(success=True, message="Navigated to home")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    
-    @app.post("/control/refresh", response_model=ControlResponse)
-    async def refresh_elements():
-        """Refresh discovered UI elements."""
-        try:
-            nav_state.discover_elements(browser)
-            return ControlResponse(
-                success=True,
-                message=f"Discovered {len(nav_state.elements)} elements in {len(nav_state.rows)} rows"
-            )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     

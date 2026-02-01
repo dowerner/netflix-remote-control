@@ -1,6 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Navigation state management for Netflix UI."""
+"""
+DEPRECATED: Mouse-based navigation state management for Netflix UI.
 
+This module uses CDP DOM queries and mouse simulation for navigation,
+which is unreliable with Netflix's React UI. 
+
+For new implementations, use the JavaScript injection approach in js_nav.py
+which provides:
+- Direct element.click() calls that work with React
+- Visual focus overlay
+- More reliable element discovery
+- Automatic scroll handling
+
+This module is kept for backwards compatibility with the legacy API endpoints
+at /control/legacy/navigate and /control/legacy/select.
+"""
+
+import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
@@ -22,7 +38,11 @@ class PageContext(Enum):
 
 @dataclass
 class UIElement:
-    """Represents a discoverable UI element."""
+    """
+    DEPRECATED: Represents a discoverable UI element.
+    
+    Use js_nav.py for new navigation implementations.
+    """
     node_id: int
     selector: str
     x: int
@@ -40,7 +60,14 @@ class UIElement:
 
 @dataclass
 class NavigationState:
-    """Tracks navigation state and focus position."""
+    """
+    DEPRECATED: Tracks navigation state and focus position using mouse simulation.
+    
+    This class uses CDP DOM queries and mouse coordinate calculation which is
+    unreliable with Netflix's dynamic React UI. For new implementations, use
+    the JavaScript injection approach via BrowserManager.js_navigate() and
+    BrowserManager.js_select() methods.
+    """
     
     context: PageContext = PageContext.UNKNOWN
     elements: List[UIElement] = field(default_factory=list)
