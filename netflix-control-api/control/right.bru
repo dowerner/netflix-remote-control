@@ -1,0 +1,22 @@
+meta {
+  name: right
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{host}}/control/navigate
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "direction": "right"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

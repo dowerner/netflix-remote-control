@@ -1,0 +1,22 @@
+meta {
+  name: down
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{host}}/control/navigate
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "direction": "down"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
