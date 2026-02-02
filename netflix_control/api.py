@@ -47,6 +47,11 @@ class VolumeRequest(BaseModel):
     level: int
 
 
+class PlaybackRateRequest(BaseModel):
+    """Request body for playback rate operations."""
+    rate: float
+
+
 class PlaybackInfo(BaseModel):
     """Playback state information for Kodi integration."""
     state: str  # "playing" | "paused" | "idle"
@@ -312,6 +317,67 @@ def create_api(
                 return ControlResponse(success=True, message=f"Volume set to {vol}")
             else:
                 return ControlResponse(success=False, message=result.get("message", "Failed to set volume"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/control/speed")
+    async def get_playback_rate():
+        """Get current playback speed/rate."""
+        try:
+            result = browser.player_get_playback_rate()
+            if result.get("found"):
+                return {
+                    "success": True,
+                    "rate": result.get("rate", 1.0),
+                    "method": result.get("method", "unknown"),
+                }
+            else:
+                return {"success": False, "message": "No video player found"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/speed", response_model=ControlResponse)
+    async def set_playback_rate(request: PlaybackRateRequest):
+        """Set playback speed/rate (e.g., 1.0 for normal, 1.5 for 1.5x)."""
+        try:
+            result = browser.player_set_playback_rate(request.rate)
+            if result.get("success"):
+                rate = result.get("rate", request.rate)
+                return ControlResponse(success=True, message=f"Playback speed set to {rate}x")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to set playback rate"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/control/tracks/audio")
+    async def get_audio_tracks():
+        """Get available audio tracks."""
+        try:
+            result = browser.player_get_audio_tracks()
+            if result.get("found"):
+                return {
+                    "success": True,
+                    "tracks": result.get("tracks", []),
+                    "currentTrack": result.get("currentTrack"),
+                }
+            else:
+                return {"success": False, "message": "No audio tracks found"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/control/tracks/text")
+    async def get_text_tracks():
+        """Get available subtitle/text tracks."""
+        try:
+            result = browser.player_get_text_tracks()
+            if result.get("found"):
+                return {
+                    "success": True,
+                    "tracks": result.get("tracks", []),
+                    "currentTrack": result.get("currentTrack"),
+                }
+            else:
+                return {"success": False, "message": "No text tracks found"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     

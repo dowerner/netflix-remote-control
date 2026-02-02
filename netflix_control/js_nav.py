@@ -871,6 +871,8 @@ def get_reset_call() -> str:
 
 
 # Player control script - separate from navigation
+# Uses Netflix Cadmium Player API for reliable control (including seeking with DRM)
+# Falls back to HTML5 video element when Cadmium is not available
 PLAYER_CONTROL_SCRIPT = """
 (function() {
     // Prevent re-initialization
@@ -881,16 +883,53 @@ PLAYER_CONTROL_SCRIPT = """
     window.NetflixPlayer = {
         initialized: true,
 
+        // Get the Netflix Cadmium player via the official API
+        // This is more reliable than the HTML5 video element
+        getCadmiumPlayer() {
+            try {
+                if (window.netflix && 
+                    window.netflix.appContext && 
+                    window.netflix.appContext.state && 
+                    window.netflix.appContext.state.playerApp) {
+                    const videoPlayer = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
+                    const sessionIds = videoPlayer.getAllPlayerSessionIds();
+                    if (sessionIds && sessionIds.length > 0) {
+                        return videoPlayer.getVideoPlayerBySessionId(sessionIds[0]);
+                    }
+                }
+            } catch (e) {
+                console.log('[NetflixPlayer] Cadmium API not available:', e.message);
+            }
+            return null;
+        },
+
+        // Fallback: get HTML5 video element
         getVideo() {
             return document.querySelector('video');
         },
 
         isPlaying() {
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                return player.isPlaying();
+            }
             const video = this.getVideo();
             return video && !video.paused;
         },
 
         play() {
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    player.play();
+                    return { success: true, state: 'playing', method: 'cadmium' };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium play failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video
             const video = this.getVideo();
             if (video) {
                 if (video.paused) {
@@ -899,16 +938,29 @@ PLAYER_CONTROL_SCRIPT = """
                 }
                 return { success: true, state: 'playing', message: 'Already playing' };
             }
-            // Fallback: click play button
+            
+            // Last resort: click play button
             const btn = document.querySelector('[data-uia="player-blocked-play"]');
             if (btn) {
                 btn.click();
                 return { success: true, state: 'playing', method: 'button' };
             }
-            return { success: false, message: 'No video or play button found' };
+            return { success: false, message: 'No player found' };
         },
 
         pause() {
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    player.pause();
+                    return { success: true, state: 'paused', method: 'cadmium' };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium pause failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video
             const video = this.getVideo();
             if (video) {
                 if (!video.paused) {
@@ -917,10 +969,27 @@ PLAYER_CONTROL_SCRIPT = """
                 }
                 return { success: true, state: 'paused', message: 'Already paused' };
             }
-            return { success: false, message: 'No video found' };
+            return { success: false, message: 'No player found' };
         },
 
         toggle() {
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    if (player.isPaused()) {
+                        player.play();
+                        return { success: true, state: 'playing', method: 'cadmium' };
+                    } else {
+                        player.pause();
+                        return { success: true, state: 'paused', method: 'cadmium' };
+                    }
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium toggle failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video
             const video = this.getVideo();
             if (video) {
                 if (video.paused) {
@@ -931,13 +1000,14 @@ PLAYER_CONTROL_SCRIPT = """
                     return { success: true, state: 'paused', method: 'video' };
                 }
             }
-            // Fallback: click play/pause button
+            
+            // Last resort: click play/pause button
             const btn = document.querySelector('[data-uia="player-blocked-play"]');
             if (btn) {
                 btn.click();
                 return { success: true, state: 'toggled', method: 'button' };
             }
-            return { success: false, message: 'No video or play button found' };
+            return { success: false, message: 'No player found' };
         },
 
         getTitleInfo() {
@@ -968,7 +1038,7 @@ PLAYER_CONTROL_SCRIPT = """
             // Try multiple patterns
             
             // Pattern 1: "Series: S1:E5 Title"
-            let match = text.match(/^(.+?):\s*S(\d+):E(\d+)\s*(.*)$/i);
+            let match = text.match(/^(.+?):\\s*S(\\d+):E(\\d+)\\s*(.*)$/i);
             if (match) {
                 return {
                     series_title: match[1].trim(),
@@ -979,7 +1049,7 @@ PLAYER_CONTROL_SCRIPT = """
             }
             
             // Pattern 2: "Series - Season X: Episode Y"
-            match = text.match(/^(.+?)\s*[-–]\s*Season\s*(\d+):\s*Episode\s*(\d+)\s*[-–]?\s*(.*)$/i);
+            match = text.match(/^(.+?)\\s*[-–]\\s*Season\\s*(\\d+):\\s*Episode\\s*(\\d+)\\s*[-–]?\\s*(.*)$/i);
             if (match) {
                 return {
                     series_title: match[1].trim(),
@@ -994,6 +1064,50 @@ PLAYER_CONTROL_SCRIPT = """
         },
 
         getState() {
+            // Try Cadmium API first (more reliable)
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    const titleInfo = this.getTitleInfo();
+                    const isPlaying = player.isPlaying();
+                    const isPaused = player.isPaused();
+                    const currentTimeMs = player.getCurrentTime();
+                    const durationMs = player.getDuration();
+                    const volume = player.getVolume();
+                    const isMuted = player.isMuted();
+                    
+                    // Determine state
+                    let state = 'idle';
+                    if (isPlaying) {
+                        state = 'playing';
+                    } else if (isPaused) {
+                        state = 'paused';
+                    }
+                    
+                    return {
+                        found: true,
+                        state: state,
+                        playing: isPlaying,
+                        position_seconds: Math.floor(currentTimeMs / 1000),
+                        duration_seconds: Math.floor(durationMs / 1000) || 0,
+                        is_muted: isMuted,
+                        volume: Math.round(volume * 100),
+                        // Legacy fields for backwards compatibility
+                        currentTime: currentTimeMs / 1000,
+                        duration: durationMs / 1000,
+                        muted: isMuted,
+                        // Additional Cadmium info
+                        method: 'cadmium',
+                        movieId: player.getMovieId ? player.getMovieId() : null,
+                        // Title info
+                        ...titleInfo
+                    };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium getState failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video element
             const video = this.getVideo();
             if (!video) {
                 return { 
@@ -1026,16 +1140,36 @@ PLAYER_CONTROL_SCRIPT = """
                 currentTime: video.currentTime,
                 duration: video.duration,
                 muted: video.muted,
+                method: 'video',
                 // Title info
                 ...titleInfo
             };
         },
 
-        // Seek methods - Note: Netflix DRM may prevent direct seeking
+        // Seek to absolute position (in seconds)
+        // Cadmium API uses milliseconds internally and works with DRM!
         seek(position_seconds) {
+            // Try Cadmium API first (this works with DRM!)
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    const durationMs = player.getDuration();
+                    const targetMs = Math.max(0, Math.min(position_seconds * 1000, durationMs || position_seconds * 1000));
+                    player.seek(targetMs);
+                    return { 
+                        success: true, 
+                        position_seconds: Math.floor(player.getCurrentTime() / 1000),
+                        method: 'cadmium'
+                    };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium seek failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video (may fail with DRM)
             const video = this.getVideo();
             if (!video) {
-                return { success: false, message: 'No video element found' };
+                return { success: false, message: 'No player found' };
             }
             
             try {
@@ -1043,17 +1177,38 @@ PLAYER_CONTROL_SCRIPT = """
                 video.currentTime = targetPos;
                 return { 
                     success: true, 
-                    position_seconds: Math.floor(video.currentTime)
+                    position_seconds: Math.floor(video.currentTime),
+                    method: 'video'
                 };
             } catch (e) {
-                return { success: false, message: 'Seek failed: ' + e.message };
+                return { success: false, message: 'Seek failed (DRM restriction): ' + e.message };
             }
         },
 
+        // Seek by relative offset (in seconds)
         seekRelative(offset_seconds) {
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    const currentMs = player.getCurrentTime();
+                    const durationMs = player.getDuration();
+                    const targetMs = Math.max(0, Math.min(currentMs + (offset_seconds * 1000), durationMs));
+                    player.seek(targetMs);
+                    return { 
+                        success: true, 
+                        position_seconds: Math.floor(player.getCurrentTime() / 1000),
+                        method: 'cadmium'
+                    };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium seekRelative failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video
             const video = this.getVideo();
             if (!video) {
-                return { success: false, message: 'No video element found' };
+                return { success: false, message: 'No player found' };
             }
             
             try {
@@ -1061,15 +1216,32 @@ PLAYER_CONTROL_SCRIPT = """
                 video.currentTime = Math.min(newPos, video.duration || newPos);
                 return { 
                     success: true, 
-                    position_seconds: Math.floor(video.currentTime)
+                    position_seconds: Math.floor(video.currentTime),
+                    method: 'video'
                 };
             } catch (e) {
-                return { success: false, message: 'Seek failed: ' + e.message };
+                return { success: false, message: 'Seek failed (DRM restriction): ' + e.message };
             }
         },
 
-        // Volume methods
+        // Get current volume (0-100)
         getVolume() {
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    return { 
+                        found: true, 
+                        volume: Math.round(player.getVolume() * 100), 
+                        is_muted: player.isMuted(),
+                        method: 'cadmium'
+                    };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium getVolume failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video
             const video = this.getVideo();
             if (!video) {
                 return { found: false };
@@ -1077,44 +1249,161 @@ PLAYER_CONTROL_SCRIPT = """
             return { 
                 found: true, 
                 volume: Math.round(video.volume * 100), 
-                is_muted: video.muted 
+                is_muted: video.muted,
+                method: 'video'
             };
         },
 
+        // Set volume (0-100)
         setVolume(level) {
-            const video = this.getVideo();
-            if (!video) {
-                return { success: false, message: 'No video element found' };
+            const clampedLevel = Math.max(0, Math.min(100, level));
+            
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    player.setVolume(clampedLevel / 100);
+                    return { 
+                        success: true, 
+                        volume: Math.round(player.getVolume() * 100),
+                        method: 'cadmium'
+                    };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium setVolume failed:', e.message);
+                }
             }
             
-            // Clamp level between 0 and 100
-            const clampedLevel = Math.max(0, Math.min(100, level));
+            // Fallback to HTML5 video
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No player found' };
+            }
+            
             video.volume = clampedLevel / 100;
             return { 
                 success: true, 
-                volume: Math.round(video.volume * 100) 
+                volume: Math.round(video.volume * 100),
+                method: 'video'
             };
         },
 
+        // Set muted state
         setMuted(muted) {
+            // Try Cadmium API first
+            const player = this.getCadmiumPlayer();
+            if (player) {
+                try {
+                    player.setMuted(!!muted);
+                    return { 
+                        success: true, 
+                        is_muted: player.isMuted(),
+                        method: 'cadmium'
+                    };
+                } catch (e) {
+                    console.log('[NetflixPlayer] Cadmium setMuted failed:', e.message);
+                }
+            }
+            
+            // Fallback to HTML5 video
             const video = this.getVideo();
             if (!video) {
-                return { success: false, message: 'No video element found' };
+                return { success: false, message: 'No player found' };
             }
             
             video.muted = !!muted;
             return { 
                 success: true, 
-                is_muted: video.muted 
+                is_muted: video.muted,
+                method: 'video'
             };
+        },
+
+        // Get playback rate (speed)
+        getPlaybackRate() {
+            const player = this.getCadmiumPlayer();
+            if (player && player.getPlaybackRate) {
+                try {
+                    return { 
+                        found: true, 
+                        rate: player.getPlaybackRate(),
+                        method: 'cadmium'
+                    };
+                } catch (e) {}
+            }
+            
+            const video = this.getVideo();
+            if (!video) {
+                return { found: false };
+            }
+            return { 
+                found: true, 
+                rate: video.playbackRate,
+                method: 'video'
+            };
+        },
+
+        // Set playback rate (speed)
+        setPlaybackRate(rate) {
+            const player = this.getCadmiumPlayer();
+            if (player && player.setPlaybackRate) {
+                try {
+                    player.setPlaybackRate(rate);
+                    return { 
+                        success: true, 
+                        rate: player.getPlaybackRate(),
+                        method: 'cadmium'
+                    };
+                } catch (e) {}
+            }
+            
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No player found' };
+            }
+            
+            video.playbackRate = rate;
+            return { 
+                success: true, 
+                rate: video.playbackRate,
+                method: 'video'
+            };
+        },
+
+        // Get audio tracks
+        getAudioTracks() {
+            const player = this.getCadmiumPlayer();
+            if (player && player.getAudioTrackList) {
+                try {
+                    return { 
+                        found: true, 
+                        tracks: player.getAudioTrackList(),
+                        currentTrack: player.getAudioTrack ? player.getAudioTrack() : null,
+                        method: 'cadmium'
+                    };
+                } catch (e) {}
+            }
+            return { found: false };
+        },
+
+        // Get subtitle/text tracks
+        getTextTracks() {
+            const player = this.getCadmiumPlayer();
+            if (player && player.getTimedTextTrackList) {
+                try {
+                    return { 
+                        found: true, 
+                        tracks: player.getTimedTextTrackList(),
+                        currentTrack: player.getTimedTextTrack ? player.getTimedTextTrack() : null,
+                        method: 'cadmium'
+                    };
+                } catch (e) {}
+            }
+            return { found: false };
         },
 
         stop() {
             // First pause the video
-            const video = this.getVideo();
-            if (video && !video.paused) {
-                video.pause();
-            }
+            this.pause();
             
             // Click the exit button to close the player
             const exitBtn = document.querySelector('[data-uia="nfplayer-exit"]');
@@ -1244,3 +1533,42 @@ def get_player_set_muted_call(muted: bool) -> str:
     """
     muted_js = "true" if muted else "false"
     return f"window.NetflixPlayer ? window.NetflixPlayer.setMuted({muted_js}) : {{success: false, message: 'Not initialized'}}"
+
+
+def get_player_playback_rate_call() -> str:
+    """Get JavaScript code to get current playback rate.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.getPlaybackRate() : {found: false, message: 'Not initialized'}"
+
+
+def get_player_set_playback_rate_call(rate: float) -> str:
+    """Get JavaScript code to set playback rate.
+    
+    Args:
+        rate: Playback rate (e.g., 1.0 for normal, 1.5 for 1.5x speed).
+        
+    Returns:
+        JavaScript code string.
+    """
+    return f"window.NetflixPlayer ? window.NetflixPlayer.setPlaybackRate({rate}) : {{success: false, message: 'Not initialized'}}"
+
+
+def get_player_audio_tracks_call() -> str:
+    """Get JavaScript code to get available audio tracks.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.getAudioTracks() : {found: false, message: 'Not initialized'}"
+
+
+def get_player_text_tracks_call() -> str:
+    """Get JavaScript code to get available subtitle/text tracks.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.getTextTracks() : {found: false, message: 'Not initialized'}"

@@ -854,6 +854,53 @@ class BrowserManager:
         result = self.execute_script(get_player_set_muted_call(muted))
         return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
     
+    def player_get_playback_rate(self) -> Dict[str, Any]:
+        """Get current playback rate (speed).
+        
+        Returns:
+            Dict with found status and rate (e.g., 1.0 for normal speed).
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_playback_rate_call
+        result = self.execute_script(get_player_playback_rate_call())
+        return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
+    def player_set_playback_rate(self, rate: float) -> Dict[str, Any]:
+        """Set playback rate (speed).
+        
+        Args:
+            rate: Playback rate (e.g., 1.0 for normal, 1.5 for 1.5x speed).
+            
+        Returns:
+            Result dict with success status and new rate.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_set_playback_rate_call
+        result = self.execute_script(get_player_set_playback_rate_call(rate))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_get_audio_tracks(self) -> Dict[str, Any]:
+        """Get available audio tracks.
+        
+        Returns:
+            Dict with found status, tracks list, and current track.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_audio_tracks_call
+        result = self.execute_script(get_player_audio_tracks_call())
+        return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
+    def player_get_text_tracks(self) -> Dict[str, Any]:
+        """Get available subtitle/text tracks.
+        
+        Returns:
+            Dict with found status, tracks list, and current track.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_text_tracks_call
+        result = self.execute_script(get_player_text_tracks_call())
+        return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
     def player_skip_forward(self) -> Dict[str, Any]:
         """Skip forward 10 seconds by clicking the skip button.
         

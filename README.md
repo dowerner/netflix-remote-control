@@ -89,6 +89,8 @@ The `/status` endpoint returns playback information when a video is playing:
 
 ### Playback Control
 
+Uses the Netflix Cadmium Player API for reliable control, including seeking (which works with DRM).
+
 | Endpoint | Method | Body | Description |
 |----------|--------|------|-------------|
 | `/control/play` | POST | - | Start playback |
@@ -105,6 +107,10 @@ The `/status` endpoint returns playback information when a video is playing:
 | `/control/seek` | POST | `{"offset_seconds": 30}` | Seek by relative offset |
 | `/control/volume` | GET | - | Get current volume and mute state |
 | `/control/volume` | POST | `{"level": 75}` | Set volume level (0-100) |
+| `/control/speed` | GET | - | Get current playback speed |
+| `/control/speed` | POST | `{"rate": 1.5}` | Set playback speed (1.0 = normal) |
+| `/control/tracks/audio` | GET | - | Get available audio tracks |
+| `/control/tracks/text` | GET | - | Get available subtitle tracks |
 
 ### Navigation (mouse-based)
 
@@ -178,6 +184,20 @@ curl http://localhost:8888/control/volume
 curl -X POST http://localhost:8888/control/volume \
   -H "Content-Type: application/json" \
   -d '{"level": 75}'
+
+# Get current playback speed
+curl http://localhost:8888/control/speed
+
+# Set playback speed to 1.5x
+curl -X POST http://localhost:8888/control/speed \
+  -H "Content-Type: application/json" \
+  -d '{"rate": 1.5}'
+
+# Get available audio tracks
+curl http://localhost:8888/control/tracks/audio
+
+# Get available subtitle tracks
+curl http://localhost:8888/control/tracks/text
 ```
 
 ## Architecture
@@ -200,6 +220,17 @@ curl -X POST http://localhost:8888/control/volume \
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+## How Playback Control Works
+
+This application uses the **Netflix Cadmium Player API** (`netflix.appContext.state.playerApp.getAPI().videoPlayer`) for reliable playback control. This provides several advantages over directly manipulating the HTML5 video element:
+
+1. **Seeking works with DRM**: Direct `video.currentTime` manipulation fails due to Netflix's DRM, but `player.seek()` works correctly
+2. **Accurate state**: More reliable playback state detection (playing, paused, buffering)
+3. **Additional features**: Access to audio tracks, subtitles, playback speed, and more
+4. **Official API**: Uses Netflix's internal player interface for better compatibility
+
+The system falls back to HTML5 video element manipulation if the Cadmium API is unavailable.
 
 ## How Navigation Works
 

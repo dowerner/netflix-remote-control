@@ -1,0 +1,22 @@
+meta {
+  name: seek
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{host}}/control/seek
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "position_seconds": 1100
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
