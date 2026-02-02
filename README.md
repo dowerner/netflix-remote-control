@@ -50,7 +50,7 @@ python run.py --pin 1234
 
 ```
 --pin PIN         PIN to load stored session
---port PORT       API server port (default: 8080)
+--port PORT       API server port (default: 8888)
 --host HOST       API server host (default: 0.0.0.0)
 --no-kiosk        Disable kiosk mode (useful for debugging)
 --skip-login      Skip automatic login handling
@@ -63,18 +63,48 @@ python run.py --pin 1234
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/status` | GET | Get current status, context, and focused element |
+| `/status` | GET | Get current status, context, navigation state, and playback info |
 
-### Playback Control (keyboard-based)
+The `/status` endpoint returns playback information when a video is playing:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/control/play` | POST | Start playback |
-| `/control/pause` | POST | Pause playback |
-| `/control/playpause` | POST | Toggle play/pause |
-| `/control/fullscreen` | POST | Toggle fullscreen |
-| `/control/mute` | POST | Toggle mute |
-| `/control/back` | POST | Go back (Escape key) |
+```json
+{
+  "status": "running",
+  "context": "player",
+  "url": "https://www.netflix.com/watch/...",
+  "nav_status": {...},
+  "playback": {
+    "state": "playing",
+    "title": "Episode Title",
+    "series_title": "Series Name",
+    "season": 1,
+    "episode": 5,
+    "duration_seconds": 3600,
+    "position_seconds": 1234,
+    "is_muted": false,
+    "volume": 100
+  }
+}
+```
+
+### Playback Control
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/control/play` | POST | - | Start playback |
+| `/control/pause` | POST | - | Pause playback |
+| `/control/playpause` | POST | - | Toggle play/pause |
+| `/control/stop` | POST | - | Stop playback and exit player |
+| `/control/fullscreen` | POST | - | Toggle fullscreen |
+| `/control/mute` | POST | - | Toggle mute |
+| `/control/back` | POST | - | Go back (Escape key) |
+| `/control/focus` | POST | - | Bring browser window to foreground |
+| `/control/skip/forward` | POST | - | Skip forward 10 seconds |
+| `/control/skip/backward` | POST | - | Skip backward 10 seconds |
+| `/control/seek` | POST | `{"position_seconds": 1234}` | Seek to absolute position |
+| `/control/seek` | POST | `{"offset_seconds": 30}` | Seek by relative offset |
+| `/control/volume` | GET | - | Get current volume and mute state |
+| `/control/volume` | POST | `{"level": 75}` | Set volume level (0-100) |
 
 ### Navigation (mouse-based)
 
@@ -106,27 +136,48 @@ python run.py --pin 1234
 ## Example Usage with curl
 
 ```bash
-# Check status
-curl http://localhost:8080/status
+# Check status (includes playback info when video is playing)
+curl http://localhost:8888/status
 
 # Navigate down
-curl -X POST http://localhost:8080/control/navigate \
+curl -X POST http://localhost:8888/control/navigate \
   -H "Content-Type: application/json" \
   -d '{"direction": "down"}'
 
 # Select current item
-curl -X POST http://localhost:8080/control/select
+curl -X POST http://localhost:8888/control/select
 
 # Play/pause
-curl -X POST http://localhost:8080/control/playpause
+curl -X POST http://localhost:8888/control/playpause
 
 # Toggle fullscreen
-curl -X POST http://localhost:8080/control/fullscreen
+curl -X POST http://localhost:8888/control/fullscreen
 
 # Search for content
-curl -X POST http://localhost:8080/control/search \
+curl -X POST http://localhost:8888/control/search \
   -H "Content-Type: application/json" \
   -d '{"query": "stranger things"}'
+
+# Bring browser to foreground (useful for Kodi addon)
+curl -X POST http://localhost:8888/control/focus
+
+# Seek to specific position (in seconds)
+curl -X POST http://localhost:8888/control/seek \
+  -H "Content-Type: application/json" \
+  -d '{"position_seconds": 300}'
+
+# Skip forward 30 seconds
+curl -X POST http://localhost:8888/control/seek \
+  -H "Content-Type: application/json" \
+  -d '{"offset_seconds": 30}'
+
+# Get current volume
+curl http://localhost:8888/control/volume
+
+# Set volume to 75%
+curl -X POST http://localhost:8888/control/volume \
+  -H "Content-Type: application/json" \
+  -d '{"level": 75}'
 ```
 
 ## Architecture
@@ -171,16 +222,16 @@ python run.py --browser /path/to/chrome
 ### Login session expired
 Clear the stored session and login again:
 ```bash
-curl -X POST http://localhost:8080/auth/clear
-curl -X POST http://localhost:8080/auth/login
+curl -X POST http://localhost:8888/auth/clear
+curl -X POST http://localhost:8888/auth/login
 # Complete login in browser, then:
-curl -X POST http://localhost:8080/auth/save
+curl -X POST http://localhost:8888/auth/save
 ```
 
 ### Navigation not finding elements
 Netflix's DOM structure can change. Use the refresh endpoint after page loads:
 ```bash
-curl -X POST http://localhost:8080/control/refresh
+curl -X POST http://localhost:8888/control/refresh
 ```
 
 ## License

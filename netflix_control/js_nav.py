@@ -940,18 +940,172 @@ PLAYER_CONTROL_SCRIPT = """
             return { success: false, message: 'No video or play button found' };
         },
 
+        getTitleInfo() {
+            // Netflix displays title info in the player UI
+            // Try multiple selectors as Netflix's DOM structure may vary
+            const selectors = [
+                '[data-uia="video-title"]',
+                '.video-title',
+                '.ellipsize-text',
+                '[class*="title"]'
+            ];
+            
+            let titleEl = null;
+            for (const selector of selectors) {
+                titleEl = document.querySelector(selector);
+                if (titleEl && titleEl.textContent.trim()) break;
+            }
+            
+            if (!titleEl) {
+                return { title: null };
+            }
+            
+            const text = titleEl.textContent.trim();
+            
+            // Netflix formats series as variations like:
+            // "Series Name: S1:E5 Episode Title" or
+            // "Series Name - Season 1: Episode 5" etc.
+            // Try multiple patterns
+            
+            // Pattern 1: "Series: S1:E5 Title"
+            let match = text.match(/^(.+?):\s*S(\d+):E(\d+)\s*(.*)$/i);
+            if (match) {
+                return {
+                    series_title: match[1].trim(),
+                    season: parseInt(match[2]),
+                    episode: parseInt(match[3]),
+                    title: match[4].trim() || null
+                };
+            }
+            
+            // Pattern 2: "Series - Season X: Episode Y"
+            match = text.match(/^(.+?)\s*[-–]\s*Season\s*(\d+):\s*Episode\s*(\d+)\s*[-–]?\s*(.*)$/i);
+            if (match) {
+                return {
+                    series_title: match[1].trim(),
+                    season: parseInt(match[2]),
+                    episode: parseInt(match[3]),
+                    title: match[4].trim() || null
+                };
+            }
+            
+            // No series pattern matched - assume it's a movie
+            return { title: text };
+        },
+
         getState() {
             const video = this.getVideo();
             if (!video) {
-                return { found: false, playing: false };
+                return { 
+                    found: false, 
+                    state: 'idle',
+                    playing: false 
+                };
             }
+            
+            // Determine playback state
+            let state = 'idle';
+            if (!video.paused && !video.ended && video.readyState > 2) {
+                state = 'playing';
+            } else if (video.paused) {
+                state = 'paused';
+            }
+            
+            // Get title info
+            const titleInfo = this.getTitleInfo();
+            
             return {
                 found: true,
+                state: state,
                 playing: !video.paused,
+                position_seconds: Math.floor(video.currentTime),
+                duration_seconds: Math.floor(video.duration) || 0,
+                is_muted: video.muted,
+                volume: Math.round(video.volume * 100),
+                // Legacy fields for backwards compatibility
                 currentTime: video.currentTime,
                 duration: video.duration,
                 muted: video.muted,
-                volume: video.volume
+                // Title info
+                ...titleInfo
+            };
+        },
+
+        // Seek methods - Note: Netflix DRM may prevent direct seeking
+        seek(position_seconds) {
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No video element found' };
+            }
+            
+            try {
+                const targetPos = Math.max(0, Math.min(position_seconds, video.duration || 0));
+                video.currentTime = targetPos;
+                return { 
+                    success: true, 
+                    position_seconds: Math.floor(video.currentTime)
+                };
+            } catch (e) {
+                return { success: false, message: 'Seek failed: ' + e.message };
+            }
+        },
+
+        seekRelative(offset_seconds) {
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No video element found' };
+            }
+            
+            try {
+                const newPos = Math.max(0, video.currentTime + offset_seconds);
+                video.currentTime = Math.min(newPos, video.duration || newPos);
+                return { 
+                    success: true, 
+                    position_seconds: Math.floor(video.currentTime)
+                };
+            } catch (e) {
+                return { success: false, message: 'Seek failed: ' + e.message };
+            }
+        },
+
+        // Volume methods
+        getVolume() {
+            const video = this.getVideo();
+            if (!video) {
+                return { found: false };
+            }
+            return { 
+                found: true, 
+                volume: Math.round(video.volume * 100), 
+                is_muted: video.muted 
+            };
+        },
+
+        setVolume(level) {
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No video element found' };
+            }
+            
+            // Clamp level between 0 and 100
+            const clampedLevel = Math.max(0, Math.min(100, level));
+            video.volume = clampedLevel / 100;
+            return { 
+                success: true, 
+                volume: Math.round(video.volume * 100) 
+            };
+        },
+
+        setMuted(muted) {
+            const video = this.getVideo();
+            if (!video) {
+                return { success: false, message: 'No video element found' };
+            }
+            
+            video.muted = !!muted;
+            return { 
+                success: true, 
+                is_muted: video.muted 
             };
         },
 
@@ -1032,3 +1186,61 @@ def get_player_stop_call() -> str:
         JavaScript code string.
     """
     return "window.NetflixPlayer ? window.NetflixPlayer.stop() : {success: false, message: 'Not initialized'}"
+
+
+def get_player_seek_call(position_seconds: int) -> str:
+    """Get JavaScript code to seek to an absolute position.
+    
+    Args:
+        position_seconds: The position to seek to in seconds.
+        
+    Returns:
+        JavaScript code string.
+    """
+    return f"window.NetflixPlayer ? window.NetflixPlayer.seek({position_seconds}) : {{success: false, message: 'Not initialized'}}"
+
+
+def get_player_seek_relative_call(offset_seconds: int) -> str:
+    """Get JavaScript code to seek by a relative offset.
+    
+    Args:
+        offset_seconds: The offset to seek by in seconds (can be negative).
+        
+    Returns:
+        JavaScript code string.
+    """
+    return f"window.NetflixPlayer ? window.NetflixPlayer.seekRelative({offset_seconds}) : {{success: false, message: 'Not initialized'}}"
+
+
+def get_player_volume_call() -> str:
+    """Get JavaScript code to get current volume.
+    
+    Returns:
+        JavaScript code string.
+    """
+    return "window.NetflixPlayer ? window.NetflixPlayer.getVolume() : {found: false, message: 'Not initialized'}"
+
+
+def get_player_set_volume_call(level: int) -> str:
+    """Get JavaScript code to set volume level.
+    
+    Args:
+        level: Volume level from 0-100.
+        
+    Returns:
+        JavaScript code string.
+    """
+    return f"window.NetflixPlayer ? window.NetflixPlayer.setVolume({level}) : {{success: false, message: 'Not initialized'}}"
+
+
+def get_player_set_muted_call(muted: bool) -> str:
+    """Get JavaScript code to set muted state.
+    
+    Args:
+        muted: Whether to mute (True) or unmute (False).
+        
+    Returns:
+        JavaScript code string.
+    """
+    muted_js = "true" if muted else "false"
+    return f"window.NetflixPlayer ? window.NetflixPlayer.setMuted({muted_js}) : {{success: false, message: 'Not initialized'}}"

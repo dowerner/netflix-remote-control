@@ -19,7 +19,7 @@ class Config:
     
     # API settings
     api_host: str = "0.0.0.0"
-    api_port: int = 8080
+    api_port: int = 8888
     
     # Browser settings
     browser_path: Optional[str] = None

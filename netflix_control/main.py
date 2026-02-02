@@ -215,8 +215,8 @@ def parse_args():
     parser.add_argument(
         "--port",
         type=int,
-        default=8080,
-        help="API server port (default: 8080)"
+        default=8888,
+        help="API server port (default: 8888)"
     )
     
     parser.add_argument(

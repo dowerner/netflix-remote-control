@@ -776,12 +776,83 @@ class BrowserManager:
         """Get current video player state.
         
         Returns:
-            Dict with playing status, currentTime, duration, muted, volume.
+            Dict with state, position, duration, volume, muted, and title info.
         """
         self._ensure_player_controller()
         from .js_nav import get_player_state_call
         result = self.execute_script(get_player_state_call())
         return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
+    def player_seek(self, position_seconds: int) -> Dict[str, Any]:
+        """Seek to an absolute position in the video.
+        
+        Note: Netflix DRM may prevent direct seeking via video.currentTime.
+        
+        Args:
+            position_seconds: The position to seek to in seconds.
+            
+        Returns:
+            Result dict with success status and new position.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_seek_call
+        result = self.execute_script(get_player_seek_call(position_seconds))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_seek_relative(self, offset_seconds: int) -> Dict[str, Any]:
+        """Seek by a relative offset in the video.
+        
+        Note: Netflix DRM may prevent direct seeking via video.currentTime.
+        
+        Args:
+            offset_seconds: The offset to seek by in seconds (can be negative).
+            
+        Returns:
+            Result dict with success status and new position.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_seek_relative_call
+        result = self.execute_script(get_player_seek_relative_call(offset_seconds))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_get_volume(self) -> Dict[str, Any]:
+        """Get current volume level and muted state.
+        
+        Returns:
+            Dict with found, volume (0-100), and is_muted.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_volume_call
+        result = self.execute_script(get_player_volume_call())
+        return result if isinstance(result, dict) else {"found": False, "error": "Invalid result"}
+    
+    def player_set_volume(self, level: int) -> Dict[str, Any]:
+        """Set volume level.
+        
+        Args:
+            level: Volume level from 0-100.
+            
+        Returns:
+            Result dict with success status and new volume level.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_set_volume_call
+        result = self.execute_script(get_player_set_volume_call(level))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
+    
+    def player_set_muted(self, muted: bool) -> Dict[str, Any]:
+        """Set muted state.
+        
+        Args:
+            muted: Whether to mute (True) or unmute (False).
+            
+        Returns:
+            Result dict with success status and muted state.
+        """
+        self._ensure_player_controller()
+        from .js_nav import get_player_set_muted_call
+        result = self.execute_script(get_player_set_muted_call(muted))
+        return result if isinstance(result, dict) else {"success": False, "error": "Invalid result"}
     
     def player_skip_forward(self) -> Dict[str, Any]:
         """Skip forward 10 seconds by clicking the skip button.
@@ -879,3 +950,19 @@ class BrowserManager:
         # Fallback: try go_back
         self.go_back()
         return {"success": True, "message": "Player stopped, used browser back"}
+    
+    # Browser focus methods
+    
+    def bring_to_front(self) -> Dict[str, Any]:
+        """Bring the browser window to the foreground.
+        
+        Uses CDP's Page.bringToFront to activate the browser tab/window.
+        
+        Returns:
+            Result dict with success status.
+        """
+        try:
+            self.ws_request("Page.bringToFront")
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

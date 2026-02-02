@@ -36,12 +36,37 @@ class SearchRequest(BaseModel):
     query: str
 
 
+class SeekRequest(BaseModel):
+    """Request body for seek operations."""
+    position_seconds: Optional[int] = None
+    offset_seconds: Optional[int] = None
+
+
+class VolumeRequest(BaseModel):
+    """Request body for volume operations."""
+    level: int
+
+
+class PlaybackInfo(BaseModel):
+    """Playback state information for Kodi integration."""
+    state: str  # "playing" | "paused" | "idle"
+    title: Optional[str] = None
+    series_title: Optional[str] = None
+    season: Optional[int] = None
+    episode: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    position_seconds: Optional[int] = None
+    is_muted: Optional[bool] = None
+    volume: Optional[int] = None
+
+
 class StatusResponse(BaseModel):
     """Response for status endpoint."""
     status: str
     context: str
     url: str
     nav_status: Optional[dict] = None
+    playback: Optional[PlaybackInfo] = None
 
 
 class AuthStatusResponse(BaseModel):
@@ -86,17 +111,35 @@ def create_api(
     
     @app.get("/status", response_model=StatusResponse)
     async def get_status():
-        """Get current application status."""
+        """Get current application status including playback info."""
         try:
             nav_state.detect_context(browser)
             url = browser.get_current_url()
             js_status = browser.js_nav_status()
+            
+            # Get playback info if video player is available
+            playback_info = None
+            player_state = browser.player_state()
+            
+            if player_state.get("found"):
+                playback_info = PlaybackInfo(
+                    state=player_state.get("state", "idle"),
+                    title=player_state.get("title"),
+                    series_title=player_state.get("series_title"),
+                    season=player_state.get("season"),
+                    episode=player_state.get("episode"),
+                    duration_seconds=player_state.get("duration_seconds"),
+                    position_seconds=player_state.get("position_seconds"),
+                    is_muted=player_state.get("is_muted"),
+                    volume=player_state.get("volume"),
+                )
             
             return StatusResponse(
                 status="running",
                 context=nav_state.context.value,
                 url=url,
                 nav_status=js_status if js_status.get("initialized") else None,
+                playback=playback_info,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -198,6 +241,33 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
+    @app.post("/control/seek", response_model=ControlResponse)
+    async def seek(request: SeekRequest):
+        """Seek to a specific position or by an offset.
+        
+        Provide either position_seconds (absolute) or offset_seconds (relative).
+        Note: Netflix DRM may prevent direct seeking via video.currentTime.
+        """
+        try:
+            if request.position_seconds is not None:
+                result = browser.player_seek(request.position_seconds)
+                if result.get("success"):
+                    pos = result.get("position_seconds", 0)
+                    return ControlResponse(success=True, message=f"Seeked to {pos}s")
+                else:
+                    return ControlResponse(success=False, message=result.get("message", "Seek failed"))
+            elif request.offset_seconds is not None:
+                result = browser.player_seek_relative(request.offset_seconds)
+                if result.get("success"):
+                    pos = result.get("position_seconds", 0)
+                    return ControlResponse(success=True, message=f"Seeked to {pos}s")
+                else:
+                    return ControlResponse(success=False, message=result.get("message", "Seek failed"))
+            else:
+                return ControlResponse(success=False, message="Provide position_seconds or offset_seconds")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
     @app.post("/control/fullscreen", response_model=ControlResponse)
     async def fullscreen():
         """Toggle fullscreen (sends F key)."""
@@ -216,6 +286,35 @@ def create_api(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
+    @app.get("/control/volume")
+    async def get_volume():
+        """Get current volume level and muted state."""
+        try:
+            result = browser.player_get_volume()
+            if result.get("found"):
+                return {
+                    "success": True,
+                    "volume": result.get("volume", 100),
+                    "is_muted": result.get("is_muted", False),
+                }
+            else:
+                return {"success": False, "message": "No video player found"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/volume", response_model=ControlResponse)
+    async def set_volume(request: VolumeRequest):
+        """Set volume level (0-100)."""
+        try:
+            result = browser.player_set_volume(request.level)
+            if result.get("success"):
+                vol = result.get("volume", request.level)
+                return ControlResponse(success=True, message=f"Volume set to {vol}")
+            else:
+                return ControlResponse(success=False, message=result.get("message", "Failed to set volume"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
     @app.post("/control/back", response_model=ControlResponse)
     async def back():
         """Go back (sends Escape key or browser back)."""
@@ -223,6 +322,21 @@ def create_api(
             # First try Escape (works in player and modals)
             browser.send_key("Escape", "Escape")
             return ControlResponse(success=True, message="Back command sent")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.post("/control/focus", response_model=ControlResponse)
+    async def focus_browser():
+        """Bring the browser window to the foreground.
+        
+        Useful when reconnecting to an already running Netflix session.
+        """
+        try:
+            result = browser.bring_to_front()
+            if result.get("success"):
+                return ControlResponse(success=True, message="Browser window focused")
+            else:
+                return ControlResponse(success=False, message=result.get("error", "Failed to focus browser"))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
